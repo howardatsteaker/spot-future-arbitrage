@@ -5,12 +5,13 @@ from decimal import Decimal
 import dateutil.parser
 from src.common import Config, Exchange
 from src.exchange.ftx.ftx_client import FtxExchange
-from src.exchange.ftx.ftx_data_type import Ftx_EWMA_InterestRate, FtxTradingRule
+from src.exchange.ftx.ftx_data_type import Ftx_EWMA_InterestRate, FtxFeeRate, FtxTradingRule
 
 
 class MainProcess:
     TRADING_RULE_POLLING_INTERVAL = 300
     INTEREST_RATE_POLLING_INTERVAL = 3600
+    FEE_RATE_POLLING_INTERVAL = 300
 
     def __init__(self, config: Config):
         self.config: Config = config
@@ -18,9 +19,11 @@ class MainProcess:
             self.exchange = FtxExchange(config.api_key, config.api_secret, config.subaccount_name)
             self.trading_rules: Dict[str, FtxTradingRule] = {}
             self.ewma_interest_rate = Ftx_EWMA_InterestRate(config.interest_rate_lookback_days)
+            self.fee_rate = FtxFeeRate()
 
             self._trading_rules_polling_task: asyncio.Task = None
             self._interest_rate_polling_task: asyncio.Task = None
+            self._fee_rate_polling_task: asyncio.Task = None
 
     @property
     def interest_rate(self) -> Decimal:
@@ -31,6 +34,7 @@ class MainProcess:
         return {
             "trading_rule_initialized": len(self.trading_rules) > 0,
             "interest_rate_initialized": self.interest_rate is not None,
+            "taker_fee_rate_initialized": self.fee_rate.taker_fee_rate is not None,
         }
 
     @property
@@ -42,6 +46,8 @@ class MainProcess:
             self._trading_rules_polling_task = asyncio.create_task(self._trading_rules_polling_loop())
         if self._interest_rate_polling_task is None:
             self._interest_rate_polling_task = asyncio.create_task(self._interest_rate_polling_loop())
+        if self._fee_rate_polling_task is None:
+            self._fee_rate_polling_task = asyncio.create_task(self._fee_rate_polling_loop())
 
     def stop_network(self):
         if self._trading_rules_polling_task is not None:
@@ -50,6 +56,9 @@ class MainProcess:
         if self._interest_rate_polling_task is not None:
             self._interest_rate_polling_task.cancel()
             self._interest_rate_polling_task = None
+        if self._fee_rate_polling_task is not None:
+            self._fee_rate_polling_task.cancel()
+            self._fee_rate_polling_task = None
 
     async def _trading_rules_polling_loop(self):
         while True:
@@ -89,6 +98,19 @@ class MainProcess:
                 raise
             except Exception:
                 print("Unexpected error while fetching USD interest rate.")
+                await asyncio.sleep(5)
+
+    async def _fee_rate_polling_loop(self):
+        while True:
+            try:
+                account = await self.exchange.get_account()
+                self.fee_rate.maker_fee_rate = Decimal(str(account['makerFee']))
+                self.fee_rate.taker_fee_rate = Decimal(str(account['takerFee']))
+                await asyncio.sleep(self.FEE_RATE_POLLING_INTERVAL)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                print("Unexpected error while fetching account fee rate.")
                 await asyncio.sleep(5)
 
     async def run(self):

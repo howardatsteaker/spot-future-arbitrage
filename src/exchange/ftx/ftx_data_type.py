@@ -33,3 +33,9 @@ class Ftx_EWMA_InterestRate:
     @property
     def yearly_rate(self) -> Decimal:
         return self.last_ewma * Decimal('24') * Decimal('365')
+
+
+@dataclass
+class FtxFeeRate:
+    taker_fee_rate: Decimal = None
+    maker_fee_rate: Decimal = None
