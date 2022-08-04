@@ -1,0 +1,8 @@
+exchange:
+  name: 'ftx'
+  api_key: ''
+  api_secret: ''
+  subaccount_name: ''
+
+interest_rate:
+  lookback_days: 60
