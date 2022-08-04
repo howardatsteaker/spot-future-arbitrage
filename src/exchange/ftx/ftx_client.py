@@ -110,3 +110,10 @@ class FtxExchange:
             results.extend(usd_result)
             end_time = min(dateutil.parser.parse(r['time']).timestamp() for r in usd_result)
         return sorted(results, key=lambda r: dateutil.parser.parse(r['time']))
+
+    async def get_coins(self) -> List[dict]:
+        url = self.REST_URL + "/wallet/coins"
+        headers = self._gen_auth_header('GET', url)
+        async with self._rest_client.get(url, headers=headers) as res:
+            json_res = await res.json()
+        return json_res['result']

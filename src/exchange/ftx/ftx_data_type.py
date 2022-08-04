@@ -39,3 +39,9 @@ class Ftx_EWMA_InterestRate:
 class FtxFeeRate:
     taker_fee_rate: Decimal = None
     maker_fee_rate: Decimal = None
+
+
+@dataclass
+class FtxCollateralWeight:
+    coin: str
+    weight: Decimal

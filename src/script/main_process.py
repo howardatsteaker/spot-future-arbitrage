@@ -5,13 +5,14 @@ from decimal import Decimal
 import dateutil.parser
 from src.common import Config, Exchange
 from src.exchange.ftx.ftx_client import FtxExchange
-from src.exchange.ftx.ftx_data_type import Ftx_EWMA_InterestRate, FtxFeeRate, FtxTradingRule
+from src.exchange.ftx.ftx_data_type import FtxCollateralWeight, Ftx_EWMA_InterestRate, FtxFeeRate, FtxTradingRule
 
 
 class MainProcess:
     TRADING_RULE_POLLING_INTERVAL = 300
     INTEREST_RATE_POLLING_INTERVAL = 3600
     FEE_RATE_POLLING_INTERVAL = 300
+    COLLATERAL_WEIGHT_POLLING_INTERVAL = 300
 
     def __init__(self, config: Config):
         self.config: Config = config
@@ -20,10 +21,12 @@ class MainProcess:
             self.trading_rules: Dict[str, FtxTradingRule] = {}
             self.ewma_interest_rate = Ftx_EWMA_InterestRate(config.interest_rate_lookback_days)
             self.fee_rate = FtxFeeRate()
+            self.collateral_weights: Dict[str, FtxCollateralWeight] = {}
 
             self._trading_rules_polling_task: asyncio.Task = None
             self._interest_rate_polling_task: asyncio.Task = None
             self._fee_rate_polling_task: asyncio.Task = None
+            self._collateral_weight_polling_task: asyncio.Task = None
 
     @property
     def interest_rate(self) -> Decimal:
@@ -35,6 +38,7 @@ class MainProcess:
             "trading_rule_initialized": len(self.trading_rules) > 0,
             "interest_rate_initialized": self.interest_rate is not None,
             "taker_fee_rate_initialized": self.fee_rate.taker_fee_rate is not None,
+            "collateral_weight_initialized": len(self.collateral_weights) > 0,
         }
 
     @property
@@ -48,6 +52,8 @@ class MainProcess:
             self._interest_rate_polling_task = asyncio.create_task(self._interest_rate_polling_loop())
         if self._fee_rate_polling_task is None:
             self._fee_rate_polling_task = asyncio.create_task(self._fee_rate_polling_loop())
+        if self._collateral_weight_polling_task is None:
+            self._collateral_weight_polling_task = asyncio.create_task(self._collateral_weight_polling_loop())
 
     def stop_network(self):
         if self._trading_rules_polling_task is not None:
@@ -59,6 +65,9 @@ class MainProcess:
         if self._fee_rate_polling_task is not None:
             self._fee_rate_polling_task.cancel()
             self._fee_rate_polling_task = None
+        if self._collateral_weight_polling_task is not None:
+            self._collateral_weight_polling_task.cancel()
+            self._collateral_weight_polling_task = None
 
     async def _trading_rules_polling_loop(self):
         while True:
@@ -107,6 +116,21 @@ class MainProcess:
                 self.fee_rate.maker_fee_rate = Decimal(str(account['makerFee']))
                 self.fee_rate.taker_fee_rate = Decimal(str(account['takerFee']))
                 await asyncio.sleep(self.FEE_RATE_POLLING_INTERVAL)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                print("Unexpected error while fetching account fee rate.")
+                await asyncio.sleep(5)
+
+    async def _collateral_weight_polling_loop(self):
+         while True:
+            try:
+                coin_infos = await self.exchange.get_coins()
+                for info in coin_infos:
+                    self.collateral_weights[info['id']] = FtxCollateralWeight(
+                        coin=info['id'],
+                        weight=Decimal(str(info['collateralWeight'])))
+                await asyncio.sleep(self.COLLATERAL_WEIGHT_POLLING_INTERVAL)
             except asyncio.CancelledError:
                 raise
             except Exception:
