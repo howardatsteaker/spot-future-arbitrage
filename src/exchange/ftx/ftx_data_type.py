@@ -45,3 +45,34 @@ class FtxFeeRate:
 class FtxCollateralWeight:
     coin: str
     weight: Decimal
+
+
+@dataclass
+class FtxHedgePair:
+    coin: str
+    spot: str
+    future: str
+
+    @staticmethod
+    def coin_to_spot(coin: str) -> str:
+        return coin + '/USD'
+
+    @staticmethod
+    def coin_to_future(coin: str, season: str) -> str:
+        return coin + '-' + season
+
+    @staticmethod
+    def spot_to_coin(spot: str) -> str:
+        return spot.split('/')[0]
+
+    @staticmethod
+    def spot_to_future(spot: str, season: str) -> str:
+        return spot.split('/')[0] + '-' + season
+
+    @staticmethod
+    def future_to_coin(future: str) -> str:
+        return future.split('-')[0]
+
+    @staticmethod
+    def future_to_spot(future: str) -> str:
+        return future.split('-')[0] + '/USD'

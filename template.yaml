@@ -6,3 +6,5 @@ exchange:
 
 interest_rate:
   lookback_days: 60
+
+season: '0930'

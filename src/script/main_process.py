@@ -1,3 +1,4 @@
+import re
 import time
 import asyncio
 from typing import Dict
@@ -5,11 +6,11 @@ from decimal import Decimal
 import dateutil.parser
 from src.common import Config, Exchange
 from src.exchange.ftx.ftx_client import FtxExchange
-from src.exchange.ftx.ftx_data_type import FtxCollateralWeight, Ftx_EWMA_InterestRate, FtxFeeRate, FtxTradingRule
+from src.exchange.ftx.ftx_data_type import FtxCollateralWeight, Ftx_EWMA_InterestRate, FtxFeeRate, FtxTradingRule, FtxHedgePair
 
 
 class MainProcess:
-    TRADING_RULE_POLLING_INTERVAL = 300
+    MARKET_STATUS_POLLING_INTERVAL = 300
     INTEREST_RATE_POLLING_INTERVAL = 3600
     FEE_RATE_POLLING_INTERVAL = 300
     COLLATERAL_WEIGHT_POLLING_INTERVAL = 300
@@ -19,11 +20,12 @@ class MainProcess:
         if config.exchange == Exchange.FTX:
             self.exchange = FtxExchange(config.api_key, config.api_secret, config.subaccount_name)
             self.trading_rules: Dict[str, FtxTradingRule] = {}
+            self.hedge_pairs: Dict[str, FtxHedgePair] = {}
             self.ewma_interest_rate = Ftx_EWMA_InterestRate(config.interest_rate_lookback_days)
             self.fee_rate = FtxFeeRate()
             self.collateral_weights: Dict[str, FtxCollateralWeight] = {}
 
-            self._trading_rules_polling_task: asyncio.Task = None
+            self._market_status_polling_task: asyncio.Task = None
             self._interest_rate_polling_task: asyncio.Task = None
             self._fee_rate_polling_task: asyncio.Task = None
             self._collateral_weight_polling_task: asyncio.Task = None
@@ -36,6 +38,7 @@ class MainProcess:
     def status_dict(self) -> Dict[str, bool]:
         return {
             "trading_rule_initialized": len(self.trading_rules) > 0,
+            "hedge_pair_initialized": len(self.hedge_pairs) > 0,
             "interest_rate_initialized": self.interest_rate is not None,
             "taker_fee_rate_initialized": self.fee_rate.taker_fee_rate is not None,
             "collateral_weight_initialized": len(self.collateral_weights) > 0,
@@ -46,8 +49,8 @@ class MainProcess:
         return all(self.status_dict.values())
 
     def start_network(self):
-        if self._trading_rules_polling_task is None:
-            self._trading_rules_polling_task = asyncio.create_task(self._trading_rules_polling_loop())
+        if self._market_status_polling_task is None:
+            self._market_status_polling_task = asyncio.create_task(self._market_status_polling_loop())
         if self._interest_rate_polling_task is None:
             self._interest_rate_polling_task = asyncio.create_task(self._interest_rate_polling_loop())
         if self._fee_rate_polling_task is None:
@@ -56,9 +59,9 @@ class MainProcess:
             self._collateral_weight_polling_task = asyncio.create_task(self._collateral_weight_polling_loop())
 
     def stop_network(self):
-        if self._trading_rules_polling_task is not None:
-            self._trading_rules_polling_task.cancel()
-            self._trading_rules_polling_task = None
+        if self._market_status_polling_task is not None:
+            self._market_status_polling_task.cancel()
+            self._market_status_polling_task = None
         if self._interest_rate_polling_task is not None:
             self._interest_rate_polling_task.cancel()
             self._interest_rate_polling_task = None
@@ -69,20 +72,48 @@ class MainProcess:
             self._collateral_weight_polling_task.cancel()
             self._collateral_weight_polling_task = None
 
-    async def _trading_rules_polling_loop(self):
+    async def _market_status_polling_loop(self):
+        """Handle the market infomations. Combined the bollowing tasks to make only one request.
+        1. update TradingRule
+        2. uddate HedgePair
+        """
         while True:
             try:
                 markets = await self.exchange.get_markets()
-                for market in markets:
-                    symbol = market['name']
-                    min_order_size = Decimal(str(market['sizeIncrement']))
-                    self.trading_rules[symbol] = FtxTradingRule(symbol, min_order_size)
-                await asyncio.sleep(self.TRADING_RULE_POLLING_INTERVAL)
+                self._update_trading_rule(markets)
+                self._update_hedge_pair(markets)
+                await asyncio.sleep(self.MARKET_STATUS_POLLING_INTERVAL)
             except asyncio.CancelledError:
                 raise
-            except Exception:
-                print("Unexpected error while fetching trading rules.")
+            except Exception as e:
+                print("Unexpected error while fetching market status.")
+                print(e)
                 await asyncio.sleep(1)
+
+    def _update_trading_rule(self, market_infos: dict):
+        for market in market_infos:
+            symbol = market['name']
+            min_order_size = Decimal(str(market['sizeIncrement']))
+            self.trading_rules[symbol] = FtxTradingRule(symbol, min_order_size)
+
+    def _update_hedge_pair(self, market_infos: dict):
+        ## For testing
+        # self.hedge_pairs['BTC'] = FtxHedgePair(
+        #     coin='BTC',
+        #     spot='BTC/USD',
+        #     future=f'BTC-{self.config.season}'
+        # )
+        symbol_set = set([info['name'] for info in market_infos if info['enabled']])
+        regex = re.compile(f"[0-9A-Z]+-{self.config.season}")
+        for symbol in symbol_set:
+            if regex.match(symbol) and FtxHedgePair.future_to_spot(symbol) in symbol_set:
+                coin = FtxHedgePair.future_to_coin(symbol)
+                spot = FtxHedgePair.coin_to_spot(coin)
+                self.hedge_pairs[coin] = FtxHedgePair(
+                    coin=coin,
+                    spot=spot,
+                    future=symbol
+                )
 
     async def _interest_rate_polling_loop(self):
         while True:
