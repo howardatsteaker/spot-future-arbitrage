@@ -91,10 +91,12 @@ class MainProcess:
                 await asyncio.sleep(1)
 
     def _update_trading_rule(self, market_infos: dict):
+        trading_rules = {}
         for market in market_infos:
             symbol = market['name']
             min_order_size = Decimal(str(market['sizeIncrement']))
-            self.trading_rules[symbol] = FtxTradingRule(symbol, min_order_size)
+            trading_rules[symbol] = FtxTradingRule(symbol, min_order_size)
+        self.trading_rules.update(trading_rules)
 
     def _update_hedge_pair(self, market_infos: dict):
         ## For testing
@@ -105,15 +107,17 @@ class MainProcess:
         # )
         symbol_set = set([info['name'] for info in market_infos if info['enabled']])
         regex = re.compile(f"[0-9A-Z]+-{self.config.season}")
+        hedge_pairs = {}
         for symbol in symbol_set:
             if regex.match(symbol) and FtxHedgePair.future_to_spot(symbol) in symbol_set:
                 coin = FtxHedgePair.future_to_coin(symbol)
                 spot = FtxHedgePair.coin_to_spot(coin)
-                self.hedge_pairs[coin] = FtxHedgePair(
+                hedge_pairs[coin] = FtxHedgePair(
                     coin=coin,
                     spot=spot,
                     future=symbol
                 )
+        self.hedge_pairs.update(hedge_pairs)
 
     async def _interest_rate_polling_loop(self):
         while True:
@@ -172,7 +176,9 @@ class MainProcess:
         self.start_network()
         while True:
             if self.ready:
-                pass
+                for pair in self.hedge_pairs.values():
+                    print(pair.spot, pair.future)
+                break
             await asyncio.sleep(1)
         self.stop_network()
         await self.exchange.close()
