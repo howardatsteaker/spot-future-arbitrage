@@ -32,13 +32,15 @@ class Config:
             api_secret: str,
             subaccount_name: str,
             interest_rate_lookback_days: int,
-            season: str,):
+            season: str,
+            log: dict):
         self.exchange=exchange
         self.api_key=api_key
         self.api_secret=api_secret
         self.subaccount_name=subaccount_name
         self.interest_rate_lookback_days = interest_rate_lookback_days
         self.season = season
+        self.log = log
 
     @classmethod
     def from_yaml(cls, file_path: str) -> Config:
@@ -52,4 +54,5 @@ class Config:
             subaccount_name=data['exchange']['subaccount_name'],
             interest_rate_lookback_days=data['interest_rate']['lookback_days'],
             season=data['season'],
+            log=data['log'],
         )

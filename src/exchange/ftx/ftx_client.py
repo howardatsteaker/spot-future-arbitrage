@@ -1,3 +1,4 @@
+import logging
 import time
 import hmac
 import json
@@ -11,6 +12,14 @@ from src.exchange.ftx.ftx_data_type import FtxCandleResolution
 class FtxExchange:
     REST_URL = "https://ftx.com/api"
     WS_URL = "wss://ftx.com/ws"
+
+    _logger = None
+
+    @classmethod
+    def logger(self):
+        if self._logger is None:
+            self._logger = logging.getLogger(__name__)
+        return self._logger
 
     def __init__(self, api_key: str, api_secret: str, subaccount_name: str = None) -> None:
         self._api_key = api_key
@@ -47,6 +56,7 @@ class FtxExchange:
         return headers
 
     async def get_markets(self) -> List[str]:
+        self.logger().debug('Send request get /markets')
         url = self.REST_URL + "/markets"
         async with self._rest_client.get(url) as res:
             json_res = await res.json()

@@ -8,3 +8,11 @@ interest_rate:
   lookback_days: 60
 
 season: '0930'
+
+log:
+  level: 'debug'
+  fmt: '%(asctime)s.%(msecs)d %(levelname)-8s [%(name)s:%(filename)s:%(lineno)d] %(message)s'
+  datefmt: '%Y-%m-%d %H:%M:%S'
+  to_console: true
+  to_file: true
+  file_path: 'log/stategy.log'

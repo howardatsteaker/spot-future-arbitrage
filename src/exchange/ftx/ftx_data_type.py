@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from decimal import Decimal
 
@@ -76,3 +76,23 @@ class FtxHedgePair:
     @staticmethod
     def future_to_spot(future: str) -> str:
         return future.split('-')[0] + '/USD'
+
+
+@dataclass
+class FtxTradingRuleMessage:
+    trading_rule: FtxTradingRule
+
+
+@dataclass
+class FtxInterestRateMessage:
+    ewma_interest_rate: Ftx_EWMA_InterestRate
+
+
+@dataclass
+class FtxFeeRateMessage:
+    fee_rate: FtxFeeRate
+
+
+@dataclass
+class FtxCollateralWeightMessage:
+    collateral_weight: FtxCollateralWeight
