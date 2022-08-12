@@ -1,4 +1,6 @@
 import asyncio
+from decimal import Decimal
+from typing import List
 import logging
 import pathlib
 from multiprocessing.connection import Connection
@@ -37,6 +39,11 @@ class SubProcess:
         self._consume_main_process_msg_task: asyncio.Task = None
         self._listen_for_ws_task: asyncio.Task = None
 
+        self.spot_entry_price: Decimal = None
+        self.future_entry_price: Decimal = None
+        self.spot_position_size: Decimal = Decimal(0)
+        self.future_position_size: Decimal = Decimal(0)  # negative means short postion
+
     def _init_get_logger(self):
         log = self.config.log
         level = logging.getLevelName(log['level'].upper())
@@ -62,11 +69,111 @@ class SubProcess:
         logging.getLogger('asyncio').setLevel(logging.WARNING)
         return logger
 
+    async def _update_position_size(self):
+        balances = await self.exchange.get_balances()
+        try:
+            balance = next(b for b in balances if b['coin'] == self.hedge_pair.coin)
+        except StopIteration:
+            self.spot_position_size = Decimal(0)
+        else:
+            self.spot_position_size = Decimal(str(balance['total']))
+        self.logger.info(f'{self.hedge_pair.coin} position size is {self.spot_position_size}')
+
+        positions = await self.exchange.get_positions()
+        try:
+            position = next(p for p in positions if p['future'] == self.hedge_pair.future)
+        except StopIteration:
+            self.future_position_size = Decimal(0)
+        else:
+            self.future_position_size = Decimal(str(position['netSize']))
+        self.logger.info(f'{self.hedge_pair.future} position size is {self.future_position_size}')
+
+    async def _update_entry_price(self):
+        await self._update_position_size()
+        spot_fills = await self.exchange.get_fills_since_last_flat(self.hedge_pair.spot, self.spot_position_size)
+        self.logger.debug(f"length of {self.hedge_pair.spot} fills is: {len(spot_fills)}")
+        future_fills = await self.exchange.get_fills_since_last_flat(self.hedge_pair.future, self.future_position_size)
+        self.logger.debug(f"length of {self.hedge_pair.future} fills is: {len(future_fills)}")
+        self.spot_entry_price = self._compute_entry_price(self.spot_position_size, spot_fills)
+        self.logger.info(f'Update {self.hedge_pair.spot} entry price: {self.spot_entry_price}')
+        self.future_entry_price = self._compute_entry_price(self.future_position_size, future_fills)
+        self.logger.info(f'Update {self.hedge_pair.future} entry price: {self.future_entry_price}')
+        if self.spot_entry_price and self.future_entry_price:
+            basis = self.future_entry_price - self.spot_entry_price
+            self.logger.info(f"Update {self.hedge_pair.coin} basis: {basis}")
+
+    def _compute_entry_price(self, position_size: Decimal, fills: List[dict]) -> Decimal:
+        if position_size == 0:
+            return None
+        elif position_size > 0:
+            temp_position_size = position_size
+            my_fills = []
+            for fill in reversed(fills):
+                size = Decimal(str(fill['size']))
+                price = Decimal(str(fill['price']))
+                if fill['side'] == 'buy':
+                    prev_position_size = temp_position_size - size
+                    if prev_position_size <= 0:
+                        my_fills.append({'side': 'buy', 'size': temp_position_size, 'price': price})
+                        break
+                    else:
+                        my_fills.append({'side': 'buy', 'size': size, 'price': price})
+                        temp_position_size = prev_position_size
+                else:
+                    temp_position_size += size
+                    my_fills.append({'side': 'sell', 'size': size, 'price': price})
+            cum_size = Decimal(0)
+            entry_price = None
+            for fill in reversed(my_fills):
+                if fill['side'] == 'buy':
+                    new_size = cum_size + fill['size']
+                    if entry_price is None:
+                        entry_price = fill['price']
+                    else:
+                        entry_price = (cum_size * entry_price + fill['size'] * fill['price']) / new_size
+                    cum_size = new_size
+                else:
+                    # entry price remain the same when closing position
+                    cum_size -= fill['size']
+            return entry_price
+        else:
+            temp_position_size = position_size
+            my_fills = []
+            for fill in reversed(fills):
+                size = Decimal(str(fill['size']))
+                price = Decimal(str(fill['price']))
+                if fill['side'] == 'sell':
+                    prev_position_size = temp_position_size + size
+                    if prev_position_size >= 0:
+                        my_fills.append({'side': 'sell', 'size': -temp_position_size, 'price': price})
+                        break
+                    else:
+                        my_fills.append({'side': 'sell', 'size': size, 'price': price})
+                        temp_position_size = prev_position_size
+                else:
+                    temp_position_size -= size
+                    my_fills.append({'side': 'buy', 'size': size, 'price': price})
+            cum_size = Decimal(0)
+            entry_price = None
+            for fill in reversed(my_fills):
+                if fill['side'] == 'sell':
+                    new_size = cum_size + fill['size']
+                    if entry_price is None:
+                        entry_price = fill['price']
+                    else:
+                        entry_price = (cum_size * entry_price + fill['size'] * fill['price']) / new_size
+                    cum_size = new_size
+                else:
+                    # entry price remain the same when closing position
+                    cum_size -= fill['size']
+            return entry_price
+
     def start_network(self):
         if self._consume_main_process_msg_task is None:
             self._consume_main_process_msg_task = asyncio.create_task(self._consume_main_process_msg())
         if self._listen_for_ws_task is None:
             self._listen_for_ws_task = asyncio.create_task(self.exchange.ws_start_network())
+        asyncio.create_task(self._update_entry_price())
 
     def stop_network(self):
         if self._consume_main_process_msg_task is not None:
