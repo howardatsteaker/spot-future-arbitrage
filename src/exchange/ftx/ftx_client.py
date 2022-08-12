@@ -4,9 +4,10 @@ import time
 import hmac
 from requests import Request
 from typing import List, Dict
+from decimal import Decimal
 import aiohttp
 import dateutil.parser
-from src.exchange.ftx.ftx_data_type import FtxCandleResolution, FtxTicker
+from src.exchange.ftx.ftx_data_type import FtxCandleResolution, FtxOrderType, FtxTicker, Side
 
 
 class FtxExchange:
@@ -135,6 +136,75 @@ class FtxExchange:
         async with self._rest_client.get(url, headers=headers) as res:
             json_res = await res.json()
         return json_res['result']
+
+    async def place_order(
+        self, market: str, side: Side, type: FtxOrderType, size: Decimal,
+        price: Decimal = None, reduce_only: bool = False, ioc: bool = False,
+        post_only: bool = False, client_id: str = None) -> dict:
+        if type == FtxOrderType.LIMIT:
+            assert price is not None, "price cannot be None when placing limit order"
+        else:
+            assert not post_only, "post_only cannot be used with market order"
+        url = self.REST_URL + "/orders"
+        data = {
+            market: market,
+            side: side.value,
+            type: type.value,
+            size: str(size),
+        }
+        if price:
+            data['price'] = str(price)
+        if reduce_only:
+            data['reduceOnly'] = reduce_only
+        if ioc:
+            data['ioc'] = ioc
+        if post_only:
+            data['post_only'] = post_only
+        if client_id:
+            data['clientId'] = client_id
+        headers = self._gen_auth_header('POST', url, body=data)
+        async with self._rest_client.post(url, headers=headers, json=data) as res:
+            res_json = await res.json()
+            if res_json['success']:
+                # TODO ftx response order id type is int, should cast to str
+                result = res_json['result']
+                self.logger().info(f"Ftx place order success: {result}")
+                return result
+            else:
+                # TODO raise a proper exception
+                raise Exception
+    
+    async def place_market_order(self, market: str, side: Side, size: Decimal) -> dict:
+        res_json = await self.place_order(market, side, FtxOrderType.MARKET, size)
+        return res_json
+
+    async def place_ioc_order(self, market: str, side: Side, size: Decimal, price: Decimal) -> dict:
+        res_json = await self.place_order(market, side, FtxOrderType.LIMIT, size, price, ioc=True)
+        return res_json
+
+    async def place_limit_order(
+        self, market: str, side: Side, size: Decimal,
+        price: Decimal, post_only: bool = False) -> dict:
+        res_json = await self.place_order(market, side, FtxOrderType.LIMIT, size, price, post_only=post_only)
+        return res_json
+
+    def quantize_order_size(self, size: Decimal, size_tick: Decimal) -> Decimal:
+        return size // size_tick * size_tick
+
+    def quantize_order_price(self, price: Decimal, price_tick: Decimal) -> Decimal:
+        return price // price_tick * price_tick
+
+    async def cancel_order(self, order_id: str) -> bool:
+        url = self.REST_URL + f"/orders/{order_id}"
+        headers = self._gen_auth_header('DELETE', url)
+        async with self._rest_client.delete(url, headers=headers) as res:
+            res_json = await res.json()
+            if res_json['success']:
+                self.logger().info(f"{res_json['result']}, order id: {order_id}")
+                return True
+            else:
+                self.logger().error(f"Fail to cancel order: {order_id}")
+                return False
 
     def ws_register_order_channel(self):
         self._to_subscribe_order_channel = True

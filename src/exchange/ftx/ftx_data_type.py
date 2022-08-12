@@ -120,3 +120,13 @@ class FtxTicker:
             last=Decimal(str(ticker_info['last'])),
             timestamp=ticker_info['time'],
         )
+
+
+class Side(Enum):
+    BUY = 'buy'
+    SELL = 'sell'
+
+
+class FtxOrderType(Enum):
+    LIMIT ='limit'
+    MARKET = 'market'
