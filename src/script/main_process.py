@@ -188,6 +188,21 @@ class MainProcess:
         #     spot='ETH/USD',
         #     future=f'ETH-{self.config.season}'
         # )
+        # self.hedge_pairs['AMD'] = FtxHedgePair(
+        #     coin='AMD',
+        #     spot='AMD/USD',
+        #     future=f'AMD-{self.config.season}'
+        # )
+        # self.hedge_pairs['DOGE'] = FtxHedgePair(
+        #     coin='DOGE',
+        #     spot='DOGE/USD',
+        #     future=f'DOGE-{self.config.season}'
+        # )
+        # self.hedge_pairs['AMC'] = FtxHedgePair(
+        #     coin='AMC',
+        #     spot='AMC/USD',
+        #     future=f'AMC-{self.config.season}'
+        # )
         symbol_set = set([info['name'] for info in market_infos if info['enabled']])
         regex = re.compile(f"[0-9A-Z]+-{self.config.season}")
         hedge_pairs = {}

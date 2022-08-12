@@ -26,7 +26,7 @@ class FtxExchange:
         self._api_key = api_key
         self._api_secret = api_secret
         self._subaccount_name = subaccount_name
-        self._rest_client = aiohttp.ClientSession()
+        self._rest_client = None
         self._ws_client = None
 
         # web socket
@@ -38,6 +38,11 @@ class FtxExchange:
 
     async def close(self):
         await self._rest_client.close()
+
+    def _get_rest_client(self):
+        if self._rest_client is None:
+            self._rest_client = aiohttp.ClientSession()
+        return self._rest_client
 
     def _gen_auth_header(self, http_method: str, url: str, body: dict = None) -> dict:
         if http_method == "POST":
@@ -66,8 +71,9 @@ class FtxExchange:
 
     async def get_markets(self) -> List[str]:
         self.logger().debug('Send request get /markets')
+        client = self._get_rest_client()
         url = self.REST_URL + "/markets"
-        async with self._rest_client.get(url) as res:
+        async with client.get(url) as res:
             json_res = await res.json()
         return json_res['result']
 
@@ -76,12 +82,13 @@ class FtxExchange:
         pass
 
     async def get_fills(self, symbol: str, start_time: float, end_time: float):
+        client = self._get_rest_client()
         all_fills = []
         id_set = set()
         while True:
             url = self.REST_URL + f"/fills?market={symbol}&start_time={start_time}&end_time={end_time}"
             headers = self._gen_auth_header('GET', url)
-            async with self._rest_client.get(url, headers=headers) as res:
+            async with client.get(url, headers=headers) as res:
                 json_res = await res.json()
             fills = json_res['result']
             if len(fills) == 0:
@@ -93,21 +100,24 @@ class FtxExchange:
         return sorted(all_fills, key=lambda fill: dateutil.parser.parse(fill['time']))
 
     async def get_account(self) -> dict:
+        client = self._get_rest_client()
         url = self.REST_URL + "/account"
         headers = self._gen_auth_header('GET', url)
-        async with self._rest_client.get(url, headers=headers) as res:
+        async with client.get(url, headers=headers) as res:
             json_res = await res.json()
         return json_res['result']
 
     async def set_leverage(self, leverage: int):
+        client = self._get_rest_client()
         url = self.REST_URL + "/account/leverage"
         data = {'leverage': leverage}
         headers = self._gen_auth_header('POST', url, body=data)
-        async with self._rest_client.post(url, headers=headers, json=data) as res:
+        async with client.post(url, headers=headers, json=data) as res:
             json_res = await res.json()
             assert json_res['success'], "ftx set_leverage was not success"
 
     async def get_spot_margin_history(self, start_time: float = None, end_time: float = None) -> List[dict]:
+        client = self._get_rest_client()
         url = self.REST_URL + "/spot_margin/history"
         data = {}
         if start_time:
@@ -115,7 +125,7 @@ class FtxExchange:
         if end_time:
             data['end_time'] = end_time
         headers = self._gen_auth_header('GET', url)
-        async with self._rest_client.get(url, headers=headers, params=data) as res:
+        async with client.get(url, headers=headers, params=data) as res:
             json_res = await res.json()
         return json_res['result']
 
@@ -131,9 +141,10 @@ class FtxExchange:
         return sorted(results, key=lambda r: dateutil.parser.parse(r['time']))
 
     async def get_coins(self) -> List[dict]:
+        client = self._get_rest_client()
         url = self.REST_URL + "/wallet/coins"
         headers = self._gen_auth_header('GET', url)
-        async with self._rest_client.get(url, headers=headers) as res:
+        async with client.get(url, headers=headers) as res:
             json_res = await res.json()
         return json_res['result']
 
@@ -145,6 +156,7 @@ class FtxExchange:
             assert price is not None, "price cannot be None when placing limit order"
         else:
             assert not post_only, "post_only cannot be used with market order"
+        client = self._get_rest_client()
         url = self.REST_URL + "/orders"
         data = {
             market: market,
@@ -163,7 +175,7 @@ class FtxExchange:
         if client_id:
             data['clientId'] = client_id
         headers = self._gen_auth_header('POST', url, body=data)
-        async with self._rest_client.post(url, headers=headers, json=data) as res:
+        async with client.post(url, headers=headers, json=data) as res:
             res_json = await res.json()
             if res_json['success']:
                 # TODO ftx response order id type is int, should cast to str
@@ -195,9 +207,10 @@ class FtxExchange:
         return price // price_tick * price_tick
 
     async def cancel_order(self, order_id: str) -> bool:
+        client = self._get_rest_client()
         url = self.REST_URL + f"/orders/{order_id}"
         headers = self._gen_auth_header('DELETE', url)
-        async with self._rest_client.delete(url, headers=headers) as res:
+        async with client.delete(url, headers=headers) as res:
             res_json = await res.json()
             if res_json['success']:
                 self.logger().info(f"{res_json['result']}, order id: {order_id}")
@@ -214,6 +227,7 @@ class FtxExchange:
         if position == 0:
             return []
         else:
+            client = self._get_rest_client()
             temp_position = position
             all_fills = []
             id_set = set()
@@ -221,7 +235,7 @@ class FtxExchange:
             while True:
                 url = self.REST_URL + f"/fills?market={symbol}&start_time=0&end_time={end_time}"
                 headers = self._gen_auth_header('GET', url)
-                async with self._rest_client.get(url, headers=headers) as res:
+                async with client.get(url, headers=headers) as res:
                     json_res = await res.json()
                 fills = json_res['result']
                 dedup_fills = [f for f in fills if f['id'] not in id_set]
@@ -255,16 +269,18 @@ class FtxExchange:
             return sorted(all_fills, key=lambda fill: dateutil.parser.parse(fill['time']))
 
     async def get_positions(self):
+        client = self._get_rest_client()
         url = self.REST_URL + "/positions"
         headers = self._gen_auth_header('GET', url)
-        async with self._rest_client.get(url, headers=headers) as res:
+        async with client.get(url, headers=headers) as res:
             json_res = await res.json()
         return json_res['result']
 
     async def get_balances(self):
+        client = self._get_rest_client()
         url = self.REST_URL + "/wallet/balances"
         headers = self._gen_auth_header('GET', url)
-        async with self._rest_client.get(url, headers=headers) as res:
+        async with client.get(url, headers=headers) as res:
             json_res = await res.json()
         return json_res['result']
 
