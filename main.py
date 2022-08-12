@@ -1,5 +1,6 @@
 from argparse import ArgumentParser
 import asyncio
+import uvloop
 from src.common import Config
 from src.script.main_process import MainProcess
 
@@ -15,4 +16,5 @@ async def main():
 
 
 if __name__ == "__main__":
+    uvloop.install()
     asyncio.run(main())

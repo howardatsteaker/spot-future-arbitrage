@@ -2,6 +2,7 @@ import asyncio
 import logging
 import pathlib
 from multiprocessing.connection import Connection
+import uvloop
 from src.common import Config
 from src.exchange.ftx.ftx_client import FtxExchange
 from src.exchange.ftx.ftx_data_type import (
@@ -114,4 +115,5 @@ class SubProcess:
 def run_sub_process(hedge_pair: FtxHedgePair, config: Config, conn: Connection):
     sub_process = SubProcess(hedge_pair, config, conn)
     sub_process.logger.debug(f'start to run {hedge_pair.coin} process')
+    uvloop.install()
     asyncio.run(sub_process.run())
