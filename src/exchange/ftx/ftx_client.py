@@ -77,9 +77,30 @@ class FtxExchange:
             json_res = await res.json()
         return json_res['result']
 
-    async def get_candles(self, symbol: str, resolution: FtxCandleResolution, start_time: int, end_time: int):
-        url = self.REST_URL + f"/markets/{symbol}/candles?resolution={resolution.value}&start_time={start_time}&end_time={end_time}"
-        pass
+    async def get_candles(self, symbol: str, resolution: FtxCandleResolution, start_time: int, end_time: int) -> List[dict]:
+        if start_time is None:
+            start_time = 0
+        if end_time is None:
+            end_time = time.time()
+        time_set = set()
+        all_candles = []
+        client = self._get_rest_client()
+        while True:
+            url = self.REST_URL + f"/markets/{symbol}/candles?resolution={resolution.value}&start_time={start_time}&end_time={end_time}"
+            async with client.get(url) as res:
+                res_json = await res.json()
+                candles = res_json['result']
+            if len(candles) == 0:
+                break
+            dedupted_candles = [c for c in candles if c['startTime'] not in time_set]
+            if len(dedupted_candles) == 0:
+                break
+            all_candles.extend(dedupted_candles)
+            time_set |= {c['startTime'] for c in dedupted_candles}
+            end_time = min([dateutil.parser.parse(c['startTime']) for c in candles]).timestamp() - 1
+            if end_time < start_time:
+                break
+        return sorted(all_candles, key=lambda x: dateutil.parser.parse(x['startTime']))
 
     async def get_fills(self, symbol: str, start_time: float, end_time: float):
         client = self._get_rest_client()
