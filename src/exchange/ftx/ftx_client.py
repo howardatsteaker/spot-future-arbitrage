@@ -1,12 +1,12 @@
+import asyncio
 import logging
 import time
 import hmac
-import json
 from requests import Request
-from typing import List
+from typing import List, Dict
 import aiohttp
 import dateutil.parser
-from src.exchange.ftx.ftx_data_type import FtxCandleResolution
+from src.exchange.ftx.ftx_data_type import FtxCandleResolution, FtxTicker
 
 
 class FtxExchange:
@@ -26,6 +26,14 @@ class FtxExchange:
         self._api_secret = api_secret
         self._subaccount_name = subaccount_name
         self._rest_client = aiohttp.ClientSession()
+        self._ws_client = None
+
+        # web socket
+        self._to_subscribe_order_channel = False
+        self._to_subscribe_ticker_channel = False
+        self._ticker_symbols: list = []
+        self.tickers: Dict[str, FtxTicker] = {}
+        self.ticker_notify_conds: Dict[str, asyncio.Condition] = {}
 
     async def close(self):
         await self._rest_client.close()
@@ -127,3 +135,89 @@ class FtxExchange:
         async with self._rest_client.get(url, headers=headers) as res:
             json_res = await res.json()
         return json_res['result']
+
+    def ws_register_order_channel(self):
+        self._to_subscribe_order_channel = True
+
+    def ws_register_ticker_channel(self, symbols: List[str]):
+        self._to_subscribe_ticker_channel = True
+        self._ticker_symbols = symbols
+
+    async def ws_start_network(self):
+        if not (self._to_subscribe_order_channel or self._to_subscribe_ticker_channel):
+            return
+        ping_task: asyncio.Task = None
+        while True:
+            try:
+                ws_client = self._get_ws_client()
+                async with ws_client.ws_connect(self.WS_URL) as ws:
+                    ping_task = asyncio.create_task(self._ping(ws))
+                    if self._to_subscribe_order_channel:
+                        ts = int(time.time() * 1e3)
+                        sign_str = f"{ts}websocket_login".encode()
+                        sign = hmac.new(self._api_secret.encode(), sign_str, 'sha256').hexdigest()
+                        payload = {
+                            'args': {
+                                "key": self._api_key,
+                                "sign": sign,
+                                "time": ts,},
+                            'op': 'login'}
+                        if self._subaccount_name:
+                            payload['args']['subaccount'] = self._subaccount_name
+                        await ws.send_json(payload)
+                        await ws.send_json({'op': 'subscribe', 'channel': 'orders'})
+                    if self._to_subscribe_ticker_channel:
+                        for symbol in self._ticker_symbols:
+                            await ws.send_json({'op': 'subscribe', 'channel': 'ticker', 'market': symbol})
+                    async for msg in ws:
+                        if msg.type in (aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.ERROR):
+                            break
+                        msg_json: dict = msg.json()
+                        if msg_json.get('type') == 'update' and msg_json.get('channel') == 'ticker':
+                            data = msg_json['data']
+                            market = msg_json['market']
+                            await self._ticker_notify_all(market)
+                            self.tickers[market] = FtxTicker.ws_entry(market, data)
+                        elif msg_json.get('type') == 'update' and msg_json.get('channel') == 'orders':
+                            data = msg_json['data']
+                            self.logger().debug(f'Receive orders data: {data}')
+                        elif msg_json.get('type') == 'pong':
+                            self.logger().debug('pong')
+                        elif msg_json.get('type') == 'subscribed' and msg_json.get('channel') == 'ticker':
+                            market = msg_json['market']
+                            self.logger().debug(f'Subscribed {market} ticker channel')
+                        elif msg_json.get('type') == 'subscribed' and msg_json.get('channel') == 'orders':
+                            self.logger().debug('Subscribed orders channel')
+                        else:
+                            self.logger().debug(f'Receive unknown msg: {msg_json}')
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                self.logger().error("Error while listen ws network.", exc_info=True)
+            finally:
+                if ping_task:
+                    ping_task.cancel()
+                    ping_task = None
+                if ws_client:
+                    await ws_client.close()
+
+    async def _ping(self, ws: aiohttp.ClientWebSocketResponse):
+        while True:
+            try:
+                await ws.send_json({'op': 'ping'})
+                await asyncio.sleep(15)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                self.logger().error("Error while send ping", exc_info=True)
+
+    def _get_ws_client(self):
+        if self._ws_client is None:
+            self._ws_client = aiohttp.ClientSession()
+        return self._ws_client
+
+    async def _ticker_notify_all(self, symbol: str):
+        if self.ticker_notify_conds.get(symbol) is None:
+            self.ticker_notify_conds[symbol] = asyncio.Condition()
+        async with self.ticker_notify_conds[symbol]:
+            self.ticker_notify_conds[symbol].notify_all()

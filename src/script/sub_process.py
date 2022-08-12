@@ -3,6 +3,7 @@ import logging
 import pathlib
 from multiprocessing.connection import Connection
 from src.common import Config
+from src.exchange.ftx.ftx_client import FtxExchange
 from src.exchange.ftx.ftx_data_type import (
     Ftx_EWMA_InterestRate,
     FtxCollateralWeight,
@@ -29,6 +30,12 @@ class SubProcess:
         self.fee_rate: FtxFeeRate = None
         self.collateral_weight: FtxCollateralWeight = None
 
+        self.exchange = FtxExchange(config.api_key, config.api_secret, config.subaccount_name)
+        self.exchange.ws_register_ticker_channel([hedge_pair.spot, hedge_pair.future])
+
+        self._consume_main_process_msg_task: asyncio.Task = None
+        self._listen_for_ws_task: asyncio.Task = None
+
     def _init_get_logger(self):
         log = self.config.log
         level = logging.getLevelName(log['level'].upper())
@@ -54,7 +61,21 @@ class SubProcess:
         logging.getLogger('asyncio').setLevel(logging.WARNING)
         return logger
 
-    async def consume_main_process_msg(self):
+    def start_network(self):
+        if self._consume_main_process_msg_task is None:
+            self._consume_main_process_msg_task = asyncio.create_task(self._consume_main_process_msg())
+        if self._listen_for_ws_task is None:
+            self._listen_for_ws_task = asyncio.create_task(self.exchange.ws_start_network())
+
+    def stop_network(self):
+        if self._consume_main_process_msg_task is not None:
+            self._consume_main_process_msg_task.cancel()
+            self._consume_main_process_msg_task = None
+        if self._listen_for_ws_task is not None:
+            self._listen_for_ws_task.cancel()
+            self._listen_for_ws_task = None
+
+    async def _consume_main_process_msg(self):
         while True:
             if self.conn.poll():
                 msg = self.conn.recv()
@@ -78,8 +99,19 @@ class SubProcess:
                     self.logger.warning(f"{self.hedge_pair.coin} receive unknown message: {msg}")
             await asyncio.sleep(1)
 
+    async def run(self):
+        self.start_network()
+        while True:
+            cond = self.exchange.ticker_notify_conds.get(self.hedge_pair.future)
+            if cond:
+                async with cond:
+                    await cond.wait()
+                    ticker = self.exchange.tickers.get(self.hedge_pair.future)
+                    self.logger.debug(ticker)
+            await asyncio.sleep(0)
+
 
 def run_sub_process(hedge_pair: FtxHedgePair, config: Config, conn: Connection):
     sub_process = SubProcess(hedge_pair, config, conn)
     sub_process.logger.debug(f'start to run {hedge_pair.coin} process')
-    asyncio.run(sub_process.consume_main_process_msg())
+    asyncio.run(sub_process.run())

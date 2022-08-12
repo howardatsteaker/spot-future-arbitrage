@@ -1,3 +1,4 @@
+from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 from decimal import Decimal
@@ -96,3 +97,26 @@ class FtxFeeRateMessage:
 @dataclass
 class FtxCollateralWeightMessage:
     collateral_weight: FtxCollateralWeight
+
+
+@dataclass
+class FtxTicker:
+    symbol: str
+    bid: Decimal
+    ask: Decimal
+    bid_size: Decimal
+    ask_size: Decimal
+    last: Decimal
+    timestamp: float
+
+    @classmethod
+    def ws_entry(cls, symbol: str, ticker_info: dict) -> FtxTicker:
+        return cls(
+            symbol=symbol,
+            bid=Decimal(str(ticker_info['bid'])),
+            ask=Decimal(str(ticker_info['ask'])),
+            bid_size=Decimal(str(ticker_info['bidSize'])),
+            ask_size=Decimal(str(ticker_info['askSize'])),
+            last=Decimal(str(ticker_info['last'])),
+            timestamp=ticker_info['time'],
+        )

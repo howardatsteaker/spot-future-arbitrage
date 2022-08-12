@@ -60,6 +60,10 @@ class MainProcess:
             self._collateral_weight_polling_task: asyncio.Task = None
             self._spawn_sub_processes_task: asyncio.Task = None
             self._sub_process_listen_tasks: Dict[str, asyncio.Task] = {}
+            self._listen_for_ws_task: asyncio.Task = None
+
+            # websocket
+            self.exchange.ws_register_order_channel()
 
     def _init_get_logger(self):
         log = self.config.log
@@ -114,6 +118,8 @@ class MainProcess:
             self._collateral_weight_polling_task = asyncio.create_task(self._collateral_weight_polling_loop())
         if self._spawn_sub_processes_task is None:
             self._spawn_sub_processes_task = asyncio.create_task(self._spawn_sub_processes())
+        if self._listen_for_ws_task is None:
+            self._listen_for_ws_task = asyncio.create_task(self.exchange.ws_start_network())
 
     def stop_network(self):
         if self._market_status_polling_task is not None:
@@ -131,6 +137,9 @@ class MainProcess:
         if self._spawn_sub_processes_task is not None:
             self._spawn_sub_processes_task.cancel()
             self._spawn_sub_processes_task = None
+        if self._listen_for_ws_task is not None:
+            self._listen_for_ws_task.cancel()
+            self._listen_for_ws_task = None
         self._stop_all_sub_process_listen_tasks()
         self._stop_all_sub_processes()
 
