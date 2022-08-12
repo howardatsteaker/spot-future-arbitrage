@@ -206,6 +206,68 @@ class FtxExchange:
                 self.logger().error(f"Fail to cancel order: {order_id}")
                 return False
 
+    async def get_fills_since_last_flat(self, symbol: str, position: Decimal) -> List[dict]:
+        """Get all fills of a symbol since last last
+        position > 0 means long position
+        position < 0 means short position
+        """
+        if position == 0:
+            return []
+        else:
+            temp_position = position
+            all_fills = []
+            id_set = set()
+            end_time = time.time()
+            while True:
+                url = self.REST_URL + f"/fills?market={symbol}&start_time=0&end_time={end_time}"
+                headers = self._gen_auth_header('GET', url)
+                async with self._rest_client.get(url, headers=headers) as res:
+                    json_res = await res.json()
+                fills = json_res['result']
+                dedup_fills = [f for f in fills if f['id'] not in id_set]
+                if len(dedup_fills) == 0:
+                    break
+                for fill in dedup_fills:
+                    size = Decimal(str(fill['size']))
+                    if position > 0:
+                        if fill['side'] == 'buy':
+                            temp_position -= size
+                            all_fills.append(fill)
+                            id_set.add(fill['id'])
+                            if temp_position <= 0:
+                                break
+                        else:
+                            temp_position += size
+                            all_fills.append(fill)
+                            id_set.add(fill['id'])
+                    elif position < 0:
+                        if fill['side'] == 'sell':
+                            temp_position += size
+                            all_fills.append(fill)
+                            id_set.add(fill['id'])
+                            if temp_position >= 0:
+                                break
+                        else:
+                            temp_position -= size
+                            all_fills.append(fill)
+                            id_set.add(fill['id'])
+                end_time = min([dateutil.parser.parse(fill['time']).timestamp() for fill in all_fills]) - 0.000001
+            return sorted(all_fills, key=lambda fill: dateutil.parser.parse(fill['time']))
+
+    async def get_positions(self):
+        url = self.REST_URL + "/positions"
+        headers = self._gen_auth_header('GET', url)
+        async with self._rest_client.get(url, headers=headers) as res:
+            json_res = await res.json()
+        return json_res['result']
+
+    async def get_balances(self):
+        url = self.REST_URL + "/wallet/balances"
+        headers = self._gen_auth_header('GET', url)
+        async with self._rest_client.get(url, headers=headers) as res:
+            json_res = await res.json()
+        return json_res['result']
+
     def ws_register_order_channel(self):
         self._to_subscribe_order_channel = True
 
