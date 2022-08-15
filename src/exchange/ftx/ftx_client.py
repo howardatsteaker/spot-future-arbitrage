@@ -36,8 +36,20 @@ class FtxExchange:
         self.tickers: Dict[str, FtxTicker] = {}
         self.ticker_notify_conds: Dict[str, asyncio.Condition] = {}
 
+    def __del__(self):
+        close_tasks = []
+        if self._rest_client is not None:
+            close_tasks.append(self._rest_client.close())
+        if self._ws_client is not None:
+            close_tasks.append(self._ws_client.close())
+        if len(close_tasks) > 0:
+            asyncio.run(asyncio.gather(*close_tasks))
+
     async def close(self):
-        await self._rest_client.close()
+        if self._rest_client is not None:
+            await self._rest_client.close()
+        if self._ws_client is not None:
+            await self._ws_client.close()
 
     def _get_rest_client(self):
         if self._rest_client is None:
