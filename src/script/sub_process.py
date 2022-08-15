@@ -3,6 +3,7 @@ from decimal import Decimal
 from typing import List
 import logging
 import pathlib
+from enum import Enum
 from multiprocessing.connection import Connection
 import uvloop
 from src.common import Config
@@ -17,6 +18,11 @@ from src.exchange.ftx.ftx_data_type import (
     FtxInterestRateMessage,
     FtxTradingRule,
     FtxTradingRuleMessage)
+
+
+class TickerNotifyType(Enum):
+    SPOT = "SPOT"
+    FUTURE = "FUTURE"
 
 
 class SubProcess:
@@ -207,16 +213,45 @@ class SubProcess:
                     self.logger.warning(f"{self.hedge_pair.coin} receive unknown message: {msg}")
             await asyncio.sleep(1)
 
+    async def wait_spot_ticker_notify(self):
+        spot_cond = self.exchange.ticker_notify_conds.get(self.hedge_pair.spot)
+        async with spot_cond:
+            await spot_cond.wait()
+
+    async def wait_future_ticker_notify(self):
+        future_cond = self.exchange.ticker_notify_conds.get(self.hedge_pair.future)
+        async with future_cond:
+            await future_cond.wait()
+
+    async def wait_either_one_ticker_condition_notify(self) -> TickerNotifyType:
+        spot_task = asyncio.create_task(self.wait_spot_ticker_notify(), name='spot')
+        future_task = asyncio.create_task(self.wait_future_ticker_notify(), name='future')
+        done, _ = await asyncio.wait({spot_task, future_task}, return_when=asyncio.FIRST_COMPLETED)
+        if spot_task in done:
+            return TickerNotifyType.SPOT
+        elif future_task in done:
+            return TickerNotifyType.FUTURE
+
+    async def open_position(self):
+        # check conditions is not None
+        spot_cond = self.exchange.ticker_notify_conds.get(self.hedge_pair.spot)
+        if spot_cond is None:
+            return
+        future_cond = self.exchange.ticker_notify_conds.get(self.hedge_pair.future)
+        if future_cond is None:
+            return
+        # wait ticker notify
+        ticker_notify_type = await self.wait_either_one_ticker_condition_notify()
+        self.logger.info(f"Get {ticker_notify_type.value} ticker notification")
+
     async def run(self):
-        self.start_network()
-        while True:
-            cond = self.exchange.ticker_notify_conds.get(self.hedge_pair.future)
-            if cond:
-                async with cond:
-                    await cond.wait()
-                    ticker = self.exchange.tickers.get(self.hedge_pair.future)
-                    self.logger.debug(ticker)
-            await asyncio.sleep(0)
+        try:
+            self.start_network()
+            while True:
+                await self.open_position()
+                await asyncio.sleep(0)
+        except KeyboardInterrupt:
+            await self.exchange.close()
 
 
 def run_sub_process(hedge_pair: FtxHedgePair, config: Config, conn: Connection):
