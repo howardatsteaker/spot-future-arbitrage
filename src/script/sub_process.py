@@ -1,3 +1,4 @@
+import time
 import asyncio
 from decimal import Decimal
 from typing import List
@@ -18,6 +19,7 @@ from src.exchange.ftx.ftx_data_type import (
     FtxInterestRateMessage,
     FtxTradingRule,
     FtxTradingRuleMessage)
+from src.indicator.macd import MACD
 
 
 class TickerNotifyType(Enum):
@@ -26,6 +28,8 @@ class TickerNotifyType(Enum):
 
 
 class SubProcess:
+    INDICATOR_UPDATE_INTERVAL = 3600  # seconds
+    INDICATOR_UPDATE_TIME_SHIFT = 30  # seconds
 
     def __init__(self, hedge_pair: FtxHedgePair, config: Config, conn: Connection):
         self.hedge_pair = hedge_pair
@@ -44,11 +48,15 @@ class SubProcess:
 
         self._consume_main_process_msg_task: asyncio.Task = None
         self._listen_for_ws_task: asyncio.Task = None
+        self._indicator_polling_loop_task: asyncio.Task = None
 
         self.spot_entry_price: Decimal = None
         self.future_entry_price: Decimal = None
         self.spot_position_size: Decimal = Decimal(0)
         self.future_position_size: Decimal = Decimal(0)  # negative means short postion
+
+        self.indicator = self._init_get_indicator()
+        self._last_indicator_update_ts: float = 0.0
 
     def _init_get_logger(self):
         log = self.config.log
@@ -174,12 +182,27 @@ class SubProcess:
                     cum_size -= fill['size']
             return entry_price
 
+    def _init_get_indicator(self):
+        if self.config.indicator['name'] == 'macd':
+            params = self.config.indicator['params']
+            return MACD(
+                self.hedge_pair,
+                fast_length=params['fast_length'],
+                slow_length=params['slow_length'],
+                signal_length=params['signal_length'],
+                std_length=params['std_length'],
+                std_mult=params['std_mult'])
+        else:
+            raise NotImplementedError(f"Sorry, {self.config.indicator['name']} is not implemented")
+
     def start_network(self):
         if self._consume_main_process_msg_task is None:
             self._consume_main_process_msg_task = asyncio.create_task(self._consume_main_process_msg())
         if self._listen_for_ws_task is None:
             self._listen_for_ws_task = asyncio.create_task(self.exchange.ws_start_network())
         asyncio.create_task(self._update_entry_price())
+        if self._indicator_polling_loop_task is None:
+            self._indicator_polling_loop_task = asyncio.create_task(self._indicator_polling_loop())
 
     def stop_network(self):
         if self._consume_main_process_msg_task is not None:
@@ -188,6 +211,9 @@ class SubProcess:
         if self._listen_for_ws_task is not None:
             self._listen_for_ws_task.cancel()
             self._listen_for_ws_task = None
+        if self._indicator_polling_loop_task is not None:
+            self._indicator_polling_loop_task.cancel()
+            self._indicator_polling_loop_task = None
 
     async def _consume_main_process_msg(self):
         while True:
@@ -212,6 +238,29 @@ class SubProcess:
                 else:
                     self.logger.warning(f"{self.hedge_pair.coin} receive unknown message: {msg}")
             await asyncio.sleep(1)
+
+    async def _indicator_polling_loop(self):
+        while True:
+            try:
+                now_ts = time.time()
+                if now_ts - self._last_indicator_update_ts > self.INDICATOR_UPDATE_INTERVAL:
+                    await self.indicator.update_indicator_info()
+                    up = self.indicator.upper_threshold
+                    low = self.indicator.lower_threshold
+                    self._last_indicator_update_ts = time.time()
+                    self.logger.info(f"Indicator is updated successfully. UP: {up}, LOW: {low}")
+                curr_tick = now_ts // self.INDICATOR_UPDATE_INTERVAL * self.INDICATOR_UPDATE_INTERVAL
+                curr_tick_with_shift = curr_tick + self.INDICATOR_UPDATE_TIME_SHIFT
+                if curr_tick_with_shift > now_ts:
+                    wait_time = curr_tick_with_shift - now_ts
+                else:
+                    wait_time = curr_tick_with_shift + self.INDICATOR_UPDATE_INTERVAL - now_ts
+                await asyncio.sleep(wait_time)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                self.logger.error(f"{self.hedge_pair.coin} Error while update indicator.", exc_info=True)
+                await asyncio.sleep(self.INDICATOR_UPDATE_TIME_SHIFT)
 
     async def wait_spot_ticker_notify(self):
         spot_cond = self.exchange.ticker_notify_conds.get(self.hedge_pair.spot)

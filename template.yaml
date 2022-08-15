@@ -16,3 +16,12 @@ log:
   to_console: true
   to_file: true
   file_path: 'log/stategy.log'
+
+indicator:
+  name: 'macd'
+  params:
+    fast_length: 12
+    slow_length: 26
+    signal_length: 9
+    std_length: 20
+    std_mult: 1.0
