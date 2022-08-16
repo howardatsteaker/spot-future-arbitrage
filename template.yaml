@@ -25,3 +25,10 @@ indicator:
     signal_length: 9
     std_length: 20
     std_mult: 1.0
+
+strategy:
+  ticker_delay_threshold: 0.2  # seconds
+  apr_to_open_position: 0.2
+  min_order_size_mode: False
+  open_order_size_multiplier: 0.1
+  close_order_size_multiplier: 0.2

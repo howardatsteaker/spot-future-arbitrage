@@ -1,12 +1,16 @@
+from dataclasses import dataclass
 import time
 import asyncio
 from decimal import Decimal
-from typing import List
+from typing import List, Dict
 import logging
 import pathlib
 from enum import Enum
 from multiprocessing.connection import Connection
+import uuid
 import uvloop
+import dateutil.parser
+from cachetools import TTLCache
 from src.common import Config
 from src.exchange.ftx.ftx_client import FtxExchange
 from src.exchange.ftx.ftx_data_type import (
@@ -15,11 +19,24 @@ from src.exchange.ftx.ftx_data_type import (
     FtxCollateralWeightMessage,
     FtxFeeRate,
     FtxFeeRateMessage,
+    FtxFundOpenFilledMessage,
+    FtxFundRequestMessage,
+    FtxFundResponseMessage,
     FtxHedgePair,
     FtxInterestRateMessage,
+    FtxLeverageMessage,
+    FtxOrderMessage,
+    FtxOrderStatus,
+    FtxOrderType,
     FtxTradingRule,
-    FtxTradingRuleMessage)
+    FtxTradingRuleMessage,
+    Side)
 from src.indicator.macd import MACD
+
+
+@dataclass
+class CombinedTradingRule:
+    min_order_size: Decimal
 
 
 class TickerNotifyType(Enum):
@@ -39,9 +56,11 @@ class SubProcess:
 
         self.spot_trading_rule: FtxTradingRule = None
         self.future_trading_rule: FtxTradingRule = None
+        self.combined_trading_rule: CombinedTradingRule = None
         self.ewma_interest_rate: Ftx_EWMA_InterestRate = None
         self.fee_rate: FtxFeeRate = None
         self.collateral_weight: FtxCollateralWeight = None
+        self.leverage: Decimal = None
 
         self.exchange = FtxExchange(config.api_key, config.api_secret, config.subaccount_name)
         self.exchange.ws_register_ticker_channel([hedge_pair.spot, hedge_pair.future])
@@ -57,6 +76,31 @@ class SubProcess:
 
         self.indicator = self._init_get_indicator()
         self._last_indicator_update_ts: float = 0.0
+
+        self.future_expiry_ts: float = None
+
+        self._fund_manager_response_event: asyncio.Event = asyncio.Event()
+        self._fund_manager_response_messages: Dict[uuid.UUID, FtxFundResponseMessage] = {}
+
+        self._ws_orders = TTLCache(maxsize=1000, ttl=60)  # using order_id: str as the mapping key
+        self._ws_orders_conds: Dict[str, asyncio.Condition] = {}
+
+    @property
+    def ready(self) -> bool:
+        # check conditions is not None
+        spot_cond = self.exchange.ticker_notify_conds.get(self.hedge_pair.spot)
+        if spot_cond is None:
+            return False
+        future_cond = self.exchange.ticker_notify_conds.get(self.hedge_pair.future)
+        if future_cond is None:
+            return False
+        if self.future_expiry_ts is None:
+            return False
+        if self.leverage is None:
+            return False
+        if self.combined_trading_rule is None:
+            return False
+        return True
 
     def _init_get_logger(self):
         log = self.config.log
@@ -195,6 +239,10 @@ class SubProcess:
         else:
             raise NotImplementedError(f"Sorry, {self.config.indicator['name']} is not implemented")
 
+    async def _init_update_future_expiry(self):
+        result = await self.exchange.get_future(self.hedge_pair.future)
+        self.future_expiry_ts = dateutil.parser.parse(result['expiry']).timestamp()
+
     def start_network(self):
         if self._consume_main_process_msg_task is None:
             self._consume_main_process_msg_task = asyncio.create_task(self._consume_main_process_msg())
@@ -203,6 +251,7 @@ class SubProcess:
         asyncio.create_task(self._update_entry_price())
         if self._indicator_polling_loop_task is None:
             self._indicator_polling_loop_task = asyncio.create_task(self._indicator_polling_loop())
+        asyncio.create_task(self._init_update_future_expiry())
 
     def stop_network(self):
         if self._consume_main_process_msg_task is not None:
@@ -226,6 +275,12 @@ class SubProcess:
                     elif trading_rule.symbol == self.hedge_pair.future:
                         self.future_trading_rule = trading_rule
                     self.logger.debug(f"{self.hedge_pair.coin} Receive trading rule message: {trading_rule}")
+                    # update the least common multiple of min order size
+                    if self.spot_trading_rule is not None and self.future_trading_rule is not None:
+                        lcm_min_order_size = max(self.spot_trading_rule.min_order_size, self.future_trading_rule.min_order_size)
+                        assert lcm_min_order_size % self.spot_trading_rule.min_order_size == 0, f"{lcm_min_order_size} is not a multiple of spot min order size {self.spot_trading_rule.min_order_size}"
+                        assert lcm_min_order_size % self.future_trading_rule.min_order_size == 0, f"{lcm_min_order_size} is not a multiple of future min order size {self.future_trading_rule.min_order_size}"
+                        self.combined_trading_rule = CombinedTradingRule(lcm_min_order_size)
                 elif type(msg) is FtxInterestRateMessage:
                     self.ewma_interest_rate = msg.ewma_interest_rate
                     self.logger.debug(f"{self.hedge_pair.coin} Receive interest rate message: {msg.ewma_interest_rate}")
@@ -235,6 +290,19 @@ class SubProcess:
                 elif type(msg) is FtxCollateralWeightMessage:
                     self.collateral_weight = msg.collateral_weight
                     self.logger.debug(f"{self.hedge_pair.coin} Receive collateral weight message: {msg.collateral_weight}")
+                elif type(msg) is FtxLeverageMessage:
+                    self.leverage = msg.leverage
+                    self.logger.debug(f"{self.hedge_pair.coin} Receive leverage message: {msg.leverage}X")
+                elif type(msg) is FtxFundResponseMessage:
+                    self._fund_manager_response_event.set()
+                    self._fund_manager_response_msg = msg
+                elif type(msg) is FtxOrderMessage:
+                    order_id = msg.id
+                    self._ws_orders[order_id] = msg
+                    order_cond = self._ws_orders_conds.get(order_id)
+                    if order_cond:
+                        async with order_cond:
+                            order_cond.notify_all()
                 else:
                     self.logger.warning(f"{self.hedge_pair.coin} receive unknown message: {msg}")
             await asyncio.sleep(1)
@@ -282,16 +350,186 @@ class SubProcess:
             return TickerNotifyType.FUTURE
 
     async def open_position(self):
-        # check conditions is not None
-        spot_cond = self.exchange.ticker_notify_conds.get(self.hedge_pair.spot)
-        if spot_cond is None:
-            return
-        future_cond = self.exchange.ticker_notify_conds.get(self.hedge_pair.future)
-        if future_cond is None:
-            return
-        # wait ticker notify
-        ticker_notify_type = await self.wait_either_one_ticker_condition_notify()
-        self.logger.info(f"Get {ticker_notify_type.value} ticker notification")
+        if self.ready:
+            # wait ticker notify
+            ticker_notify_type = await self.wait_either_one_ticker_condition_notify()
+            self.logger.info(f"Get {ticker_notify_type.value} ticker notification")
+
+            spot_ticker = self.exchange.tickers[self.hedge_pair.spot]
+            future_ticker = self.exchange.tickers[self.hedge_pair.future]
+
+            if spot_ticker.is_delay(self.config.ticker_delay_threshold):
+                self.logger.warning(f"{spot_ticker.symbol} ticker is delay")
+                return
+            if future_ticker.is_delay(self.config.ticker_delay_threshold):
+                self.logger.warning(f"{future_ticker.symbol} ticker is delay")
+                return
+
+            # get expected profit, cost, fee, etc...
+            future_price = future_ticker.bid
+            spot_price = spot_ticker.ask
+            basis = future_price - spot_price
+            collateral = future_price / self.leverage - spot_price * self.collateral_weight.weight
+            fee = (spot_price + future_price) * self.fee_rate.taker_fee_rate
+            cost = spot_price + collateral + fee
+            profit = basis - 2 * fee
+
+            if profit < 0:
+                return
+
+            # get apr
+            pnl_rate = profit / cost
+            seconds_to_expiry = max(0, self.future_expiry_ts - time.time())
+            days_to_expiry = Decimal(str(seconds_to_expiry / 86400))
+            apr = pnl_rate * Decimal('365') / days_to_expiry
+
+            # open signals
+            to_open = False
+            if apr >= self.config.apr_to_open_position:
+                to_open = True
+            if not to_open and basis > self.indicator.upper_threshold:
+                to_open = True
+            if not to_open:
+                return
+
+            # order size
+            future_size = future_ticker.bid_size
+            spot_size = spot_ticker.ask_size
+            order_size = self._get_open_order_size(future_size, spot_size)
+            if order_size <= 0:
+                return
+
+            # request fund from main process
+            fund_needed = cost * order_size
+            spot_notional_value = spot_price * order_size
+            request_id = uuid.uuid4()
+            self.conn.send(FtxFundRequestMessage(request_id, fund_needed, spot_notional_value))
+
+            # await fund response
+            try:
+                await asyncio.wait_for(self._fund_manager_response_event.wait(), timeout=self.config.ticker_delay_threshold)
+            except asyncio.TimeoutError:
+                self.logger.warning(f"{self.hedge_pair.coin} request fund for open position timeout.")
+                return
+            msg = self._fund_manager_response_messages[request_id]
+            if not msg.approve:
+                return
+
+            # calculate order size if fund_supply is smaller than fund_needed
+            if msg.fund_supply < fund_needed:
+                order_size = self._get_open_order_size_with_fund_supply(msg.fund_supply, cost)
+                if order_size <= 0:
+                    return
+
+            # place order
+            spot_place_order = self.exchange.place_market_order(self.hedge_pair.spot, Side.BUY, order_size)
+            future_place_order = self.exchange.place_market_order(self.hedge_pair.future, Side.SELL, order_size)
+            spot_order_result, future_order_result = await asyncio.gather(spot_place_order, future_place_order, return_exceptions=True)
+            both_results_ok = True
+            if type(spot_order_result) is Exception:
+                self.logger.error(f"Unexpected error while place {self.hedge_pair.spot} market order.", exc_info=True)
+                both_results_ok = False
+            if type(future_order_result) is Exception:
+                self.logger.error(f"Unexpected error while place {self.hedge_pair.future} market order.", exc_info=True)
+                both_results_ok = False
+
+            if both_results_ok:
+                spot_order_id = str(spot_order_result['id'])
+                self._ws_orders_conds[spot_order_id] = asyncio.Condition()
+                future_order_id = str(future_order_result['id'])
+                self._ws_orders_conds[future_order_id] = asyncio.Condition()
+                spot_order_msg, future_order_msg = await asyncio.gather(self._wait_order(spot_order_id), self._wait_order(future_order_id))
+                
+                if spot_order_msg is None:
+                    self.logger.warning(f"Order {spot_order_id} not found or not closed")
+                else:
+                    # update spot position size, entry price
+                    spot_new_size = self.spot_position_size + spot_order_msg.filled_size
+                    if self.spot_entry_price is None:
+                        self.spot_entry_price = spot_order_msg.avg_fill_price
+                    else:
+                        self.spot_entry_price = (self.spot_entry_price * self.spot_position_size + spot_order_msg.avg_fill_price * spot_order_msg.filled_size) / spot_new_size
+                        self.spot_position_size = spot_new_size
+                
+                if future_order_msg is None:
+                    self.logger.warning(f"Order {future_order_id} not found or not closed")
+                else:
+                    # update future position size, entry price
+                    future_new_size = self.future_position_size - future_order_msg.filled_size
+                    if self.future_entry_price is None:
+                        self.future_entry_price = future_order_msg.avg_fill_price
+                    else:
+                        self.future_entry_price = (self.future_entry_price * self.future_position_size + future_order_msg.avg_fill_price * future_order_msg.filled_size) / future_new_size
+                        self.future_position_size = future_new_size
+
+                if spot_order_msg and future_order_msg:
+                    # check filled size
+                    if spot_order_msg.filled_size != future_order_msg.filled_size:
+                        self.logger.warning(f"Filled size is not matched, {spot_order_msg.market}: {spot_order_msg.filled_size}, {future_order_msg.market}: {future_order_msg.filled_size}")
+                    else:
+                        # log open pnl rate, apr
+                        real_basis = future_order_msg.avg_fill_price - spot_order_msg.avg_fill_price
+                        real_profit = real_basis - 2 * self.fee_rate.taker_fee_rate
+                        real_collateral = future_order_msg.avg_fill_price / self.leverage - spot_order_msg.avg_fill_price * self.collateral_weight.weight
+                        real_fee = (future_order_msg.avg_fill_price + spot_order_msg.avg_fill_price) * self.fee_rate.taker_fee_rate
+                        real_cost = spot_order_msg.avg_fill_price + real_collateral + real_fee
+                        real_pnl_rate = real_profit / real_cost
+                        real_apr = real_pnl_rate * Decimal('365') / days_to_expiry
+                        self.logger.info(f"{self.hedge_pair.future} Open APR: {apr:.2%}, Basis: {basis}, Indicator up: {self.indicator.upper_threshold}, size: {min(spot_size, future_size)}, filled APR: {real_apr:.2%}, Basis: {real_basis}, size: {spot_order_msg.filled_size}")
+                        fund_used = real_cost * spot_order_msg.filled_size
+                        real_spot_notional_value = spot_order_msg.avg_fill_price * spot_order_msg.filled_size
+                        self.conn.send(FtxFundOpenFilledMessage(request_id, fund_used, real_spot_notional_value))
+                        return
+
+    async def _wait_order_notify(self, order_id: str) -> FtxOrderMessage:
+        async with self._ws_orders_conds[order_id]:
+            await self._ws_orders_conds[order_id].wait()
+            return self._ws_orders[order_id]
+
+    async def _wait_order(self, order_id: str, timeout: float = 3.0) -> FtxOrderMessage:
+        t0 = time.time()
+        while True:
+            try:
+                if time.time() - t0 > timeout:
+                    break
+                order_msg = await asyncio.wait_for(self._wait_order_notify(order_id), timeout)
+            except asyncio.TimeoutError:
+                break
+            else:
+                if order_msg.status == FtxOrderStatus.CLOSED:
+                    return order_msg
+        # try rest api
+        data = await self.exchange.get_order(order_id)
+        order_msg = FtxOrderMessage(
+            id=str(data['id']),
+            market=data['market'],
+            type=FtxOrderType.LIMIT if data['type'] == 'limit' else FtxOrderType.MARKET,
+            side=Side.BUY if data['side'] == 'buy' else Side.SELL,
+            size=Decimal(str(data['size'])),
+            price=Decimal(str(data['price'])),
+            status=FtxOrderStatus.str_entry(data['status']),
+            filled_size=Decimal(str(data['filledSize'])),
+            avg_fill_price=Decimal(str(data['avgFillPrice'])) if data['avgFillPrice'] else None,
+            create_timestamp=dateutil.parser.parse(data['createdAt']).timestamp(),
+        )
+        if order_msg.status == FtxOrderStatus.CLOSED:
+            return order_msg
+        else:
+            return None
+
+    def _get_open_order_size(self, future_size: Decimal, spot_size: Decimal) -> Decimal:
+        if self.config.min_order_size_mode:
+            return self.combined_trading_rule.min_order_size
+
+        available_size = min(future_size, spot_size)        
+        required_size = available_size * self.config.open_order_size_multiplier
+        order_size = max(required_size, self.combined_trading_rule.min_order_size)
+
+        return order_size // self.combined_trading_rule.min_order_size * self.combined_trading_rule.min_order_size
+
+    def _get_open_order_size_with_fund_supply(self, fund_supply: Decimal, cost: Decimal) -> Decimal:
+        max_order_size = fund_supply / cost
+        return max_order_size // self.combined_trading_rule.min_order_size * self.combined_trading_rule.min_order_size
 
     async def run(self):
         try:

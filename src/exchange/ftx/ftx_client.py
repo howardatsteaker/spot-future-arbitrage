@@ -35,15 +35,17 @@ class FtxExchange:
         self._ticker_symbols: list = []
         self.tickers: Dict[str, FtxTicker] = {}
         self.ticker_notify_conds: Dict[str, asyncio.Condition] = {}
+        self.orders = asyncio.Queue()
 
-    def __del__(self):
-        close_tasks = []
-        if self._rest_client is not None:
-            close_tasks.append(self._rest_client.close())
-        if self._ws_client is not None:
-            close_tasks.append(self._ws_client.close())
-        if len(close_tasks) > 0:
-            asyncio.run(asyncio.gather(*close_tasks))
+    # def __del__(self):
+    #     close_tasks = []
+    #     if self._rest_client is not None:
+    #         close_tasks.append(self._rest_client.close())
+    #     if self._ws_client is not None:
+    #         close_tasks.append(self._ws_client.close())
+    #     if len(close_tasks) > 0:
+    #         loop = asyncio.get_event_loop()
+    #         loop.run_until_complete(asyncio.gather(*close_tasks))
 
     async def close(self):
         if self._rest_client is not None:
@@ -309,9 +311,25 @@ class FtxExchange:
             json_res = await res.json()
         return json_res['result']
 
+    async def get_future(self, symbol: str):
+        client = self._get_rest_client()
+        url = self.REST_URL + f"/futures/{symbol}"
+        headers = self._gen_auth_header('GET', url)
+        async with client.get(url, headers=headers) as res:
+            json_res = await res.json()
+        return json_res['result']
+
     async def get_balances(self):
         client = self._get_rest_client()
         url = self.REST_URL + "/wallet/balances"
+        headers = self._gen_auth_header('GET', url)
+        async with client.get(url, headers=headers) as res:
+            json_res = await res.json()
+        return json_res['result']
+
+    async def get_order(self, order_id: str) -> dict:
+        client = self._get_rest_client()
+        url = self.REST_URL +f"/orders/{order_id}"
         headers = self._gen_auth_header('GET', url)
         async with client.get(url, headers=headers) as res:
             json_res = await res.json()
@@ -361,6 +379,7 @@ class FtxExchange:
                             self.tickers[market] = FtxTicker.ws_entry(market, data)
                         elif msg_json.get('type') == 'update' and msg_json.get('channel') == 'orders':
                             data = msg_json['data']
+                            self.orders.put_nowait(data)
                             self.logger().debug(f'Receive orders data: {data}')
                         elif msg_json.get('type') == 'pong':
                             self.logger().debug('pong')

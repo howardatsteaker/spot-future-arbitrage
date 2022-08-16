@@ -9,6 +9,7 @@ from concurrent.futures import ProcessPoolExecutor, Future
 import multiprocessing as mp
 from multiprocessing.connection import Connection
 import dateutil.parser
+from .fund_manager import FundManager
 from src.common import Config, Exchange
 from src.exchange.ftx.ftx_client import FtxExchange
 from src.exchange.ftx.ftx_data_type import (
@@ -17,9 +18,16 @@ from src.exchange.ftx.ftx_data_type import (
     FtxCollateralWeightMessage,
     FtxFeeRate,
     FtxFeeRateMessage,
+    FtxFundOpenFilledMessage,
+    FtxFundRequestMessage,
     FtxInterestRateMessage,
+    FtxLeverageMessage,
+    FtxOrderMessage,
+    FtxOrderStatus,
+    FtxOrderType,
     FtxTradingRule, FtxHedgePair,
-    FtxTradingRuleMessage)
+    FtxTradingRuleMessage,
+    Side)
 from src.script.sub_process import run_sub_process
 
 
@@ -28,6 +36,8 @@ class MainProcess:
     INTEREST_RATE_POLLING_INTERVAL = 3600
     FEE_RATE_POLLING_INTERVAL = 300
     COLLATERAL_WEIGHT_POLLING_INTERVAL = 300
+    ACCOUNT_INFO_POLLING_INTERVAL = 3600
+    FUND_MANAGER_POLLING_INTERVAL = 3
 
     def __init__(self, config: Config):
         self.config: Config = config
@@ -39,12 +49,14 @@ class MainProcess:
             self.ewma_interest_rate = Ftx_EWMA_InterestRate(config.interest_rate_lookback_days)
             self.fee_rate = FtxFeeRate()
             self.collateral_weights: Dict[str, FtxCollateralWeight] = {}
+            self.leverage: Decimal = Decimal('1')
 
             # params initializer, to notify sub process all params are ready
             self._trading_rules_ready_event = asyncio.Event()
             self._interest_rate_ready_event = asyncio.Event()
             self._fee_rate_ready_event = asyncio.Event()
             self._collateral_weights_ready_event = asyncio.Event()
+            self._account_info_ready_event = asyncio.Event()
 
             # Sub processes
             self._hedge_pair_initialized_cond = asyncio.Condition()
@@ -52,6 +64,7 @@ class MainProcess:
             self._executor = ProcessPoolExecutor()
             self._connections: Dict[str, Tuple[Connection, Connection]] = {}
             self._sub_process_futures: Dict[str, Future] = {}
+            self._sub_process_notify_events: Dict[str, asyncio.Event] = {}
 
             # tasks
             self._market_status_polling_task: asyncio.Task = None
@@ -60,10 +73,16 @@ class MainProcess:
             self._collateral_weight_polling_task: asyncio.Task = None
             self._spawn_sub_processes_task: asyncio.Task = None
             self._sub_process_listen_tasks: Dict[str, asyncio.Task] = {}
-            self._listen_for_ws_task: asyncio.Task = None
+            self._start_ws_task: asyncio.Task = None
+            self._listen_ws_orders_task: asyncio.Task = None
+            self._account_info_polling_task: asyncio.Task = None
+            self._fund_manager_polling_task: asyncio.Task = None
 
             # websocket
             self.exchange.ws_register_order_channel()
+
+            # fund manager
+            self.fund_manager = FundManager()
 
     def _init_get_logger(self):
         log = self.config.log
@@ -118,8 +137,14 @@ class MainProcess:
             self._collateral_weight_polling_task = asyncio.create_task(self._collateral_weight_polling_loop())
         if self._spawn_sub_processes_task is None:
             self._spawn_sub_processes_task = asyncio.create_task(self._spawn_sub_processes())
-        if self._listen_for_ws_task is None:
-            self._listen_for_ws_task = asyncio.create_task(self.exchange.ws_start_network())
+        if self._start_ws_task is None:
+            self._start_ws_task = asyncio.create_task(self.exchange.ws_start_network())
+        if self._account_info_polling_task is None:
+            self._account_info_polling_task = asyncio.create_task(self._account_info_polling_loop())
+        if self._fund_manager_polling_task is None:
+            self._fund_manager_polling_task = asyncio.create_task(self._fund_manager_polling_loop())
+        if self._listen_ws_orders_task is None:
+            self._listen_ws_orders_task = asyncio.create_task(self._listen_ws_orders())
 
     def stop_network(self):
         if self._market_status_polling_task is not None:
@@ -137,9 +162,18 @@ class MainProcess:
         if self._spawn_sub_processes_task is not None:
             self._spawn_sub_processes_task.cancel()
             self._spawn_sub_processes_task = None
-        if self._listen_for_ws_task is not None:
-            self._listen_for_ws_task.cancel()
-            self._listen_for_ws_task = None
+        if self._start_ws_task is not None:
+            self._start_ws_task.cancel()
+            self._start_ws_task = None
+        if self._account_info_polling_task is not None:
+            self._account_info_polling_task.cancel()
+            self._account_info_polling_task = None
+        if self._fund_manager_polling_task is not None:
+            self._fund_manager_polling_task.cancel()
+            self._fund_manager_polling_task = None
+        if self._listen_ws_orders_task is not None:
+            self._listen_ws_orders_task.cancel()
+            self._listen_ws_orders_task = None
         self._stop_all_sub_process_listen_tasks()
         self._stop_all_sub_processes()
 
@@ -285,6 +319,36 @@ class MainProcess:
                 self.logger.error("Unexpected error while fetching account fee rate.", exc_info=True)
                 await asyncio.sleep(5)
 
+    async def _account_info_polling_loop(self):
+        while True:
+            try:
+                account_info = await self.exchange.get_account()
+                self.leverage = Decimal(str(account_info['leverage']))
+                self._account_info_ready_event.set()
+                for (conn, _) in self._connections.values():
+                    conn.send(FtxLeverageMessage(self.leverage))
+                await asyncio.sleep(self.ACCOUNT_INFO_POLLING_INTERVAL)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                self.logger.error("Unexpected error while fetching account info.", exc_info=True)
+                await asyncio.sleep(5)
+
+    async def _fund_manager_polling_loop(self):
+        while True:
+            try:
+                account_info = await self.exchange.get_account()
+                await self.fund_manager.update_free_collateral(Decimal(str(account_info['freeCollateral'])))
+                balances = await self.exchange.get_balances()
+                usd_info = next(b for b in balances if b['coin'] == 'USD')
+                await self.fund_manager.update_usd_state(Decimal(str(usd_info['free'])), Decimal(str(usd_info['spotBorrow'])))
+                await asyncio.sleep(self.FUND_MANAGER_POLLING_INTERVAL)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                self.logger.error("Unexpected error while fetching account info.", exc_info=True)
+                await asyncio.sleep(5)
+
     async def _spawn_sub_processes(self):
         while True:
             try:
@@ -298,6 +362,8 @@ class MainProcess:
                 self.logger.debug("fee rate ready!")
                 await self._collateral_weights_ready_event.wait()
                 self.logger.debug("collateral weights ready!")
+                await self._account_info_ready_event.wait()
+                self.logger.debug("account info ready!")
 
                 for coin, hedge_pair in self.hedge_pairs.items():
                     if self._sub_process_futures.get(coin) is None:
@@ -306,6 +372,7 @@ class MainProcess:
                         self._connections[hedge_pair.coin] = (conn1, conn2)
                         sub_process_future = self._loop.run_in_executor(self._executor, run_sub_process, hedge_pair, self.config, conn2)
                         self._sub_process_futures[coin] = sub_process_future
+                        self._sub_process_notify_conditions[coin] = asyncio.Condition()
                         self._sub_process_listen_tasks[coin] = asyncio.create_task(self._listen_sub_process_msg(coin))
 
                         # notify params
@@ -317,6 +384,7 @@ class MainProcess:
                         conn1.send(FtxFeeRateMessage(fee_rate=self.fee_rate))
                         if self.collateral_weights.get(coin):
                             conn1.send(FtxCollateralWeightMessage(collateral_weight=self.collateral_weights[coin]))
+                        conn1.send(FtxLeverageMessage(leverage=self.leverage))
 
             except asyncio.CancelledError:
                 raise
@@ -335,20 +403,62 @@ class MainProcess:
 
     async def _listen_sub_process_msg(self, coin: str):
         conn = self._connections[coin][0]
+        self._loop.add_reader(conn.fileno(), self._sub_process_notify_events[coin].set)
         while True:
             try:
-                if conn.poll():
-                    msg = conn.recv()
-                    self.logger.debug(f"Get msg from {coin} child process: {msg}")
-                await asyncio.sleep(1)
+                if not conn.poll():
+                    await self._sub_process_notify_events[coin].wait()
+                msg = conn.recv()
+                self.logger.debug(f"Get msg from {coin} child process: {msg}")
+                if type(msg) is FtxFundRequestMessage:
+                    response = await self.fund_manager.request_for_open(msg)
+                    conn.send(response)
+                elif type(msg) is FtxFundOpenFilledMessage:
+                    await self.fund_manager.handle_open_order_filled(msg)
+                self._sub_process_notify_events[coin].clear()
             except asyncio.CancelledError:
                 raise
             except Exception:
                 self.logger.error("Unexpected error while listen to sub process message.", exc_info=True)
+                await asyncio.sleep(5)
 
     async def _stop_all_sub_process_listen_tasks(self):
         for task in self._sub_process_listen_tasks.values():
             task.cancel()
+
+    async def _listen_ws_orders(self):
+        while True:
+            try:
+                data = await self.exchange.orders.get()
+                order_msg = FtxOrderMessage(
+                    id=str(data['id']),
+                    market=data['market'],
+                    type=FtxOrderType.LIMIT if data['type'] == 'limit' else FtxOrderType.MARKET,
+                    side=Side.BUY if data['side'] == 'buy' else Side.SELL,
+                    size=Decimal(str(data['size'])),
+                    price=Decimal(str(data['price'])),
+                    status=FtxOrderStatus.str_entry(data['status']),
+                    filled_size=Decimal(str(data['filledSize'])),
+                    avg_fill_price=Decimal(str(data['avgFillPrice'])) if data['avgFillPrice'] else None,
+                    create_timestamp=dateutil.parser.parse(data['createdAt']).timestamp(),
+                )
+                if FtxHedgePair.is_spot(order_msg.market):
+                    coin = FtxHedgePair.spot_to_coin(order_msg.market)
+                    if self._connections.get(coin):
+                        conn = self._connections[coin][0]
+                        conn.send(order_msg)
+                elif FtxHedgePair.is_future(order_msg.market, self.config.season):
+                    coin = FtxHedgePair.future_to_coin(order_msg.market)
+                    if self._connections.get(coin):
+                        conn = self._connections[coin][0]
+                        conn.send(order_msg)
+                else:
+                    self.logger.warning(f"Get unknown order msg: {order_msg}")
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                self.logger.error("Unexpected error while listen to ws orders.", exc_info=True)
+                await asyncio.sleep(5)
 
     async def run(self):
         self.start_network()

@@ -2,6 +2,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 from decimal import Decimal
+import time
+import uuid
 
 
 class FtxCandleResolution(Enum):
@@ -78,6 +80,14 @@ class FtxHedgePair:
     def future_to_spot(future: str) -> str:
         return future.split('-')[0] + '/USD'
 
+    @staticmethod
+    def is_spot(symbol: str) -> bool:
+        return symbol.endswith('/USD')
+
+    @staticmethod
+    def is_future(symbol: str, season: str) -> bool:
+        return symbol.endswith(f"-{season}")
+
 
 @dataclass
 class FtxTradingRuleMessage:
@@ -97,6 +107,47 @@ class FtxFeeRateMessage:
 @dataclass
 class FtxCollateralWeightMessage:
     collateral_weight: FtxCollateralWeight
+
+
+@dataclass
+class FtxLeverageMessage:
+    leverage: Decimal
+
+
+@dataclass
+class FtxFundRequestMessage:
+    id: uuid.UUID
+    fund_needed: Decimal
+    spot_notional_value: Decimal
+
+
+@dataclass
+class FtxFundResponseMessage:
+    id: uuid.UUID
+    approve: bool
+    fund_supply: Decimal
+    borrow: Decimal
+
+
+@dataclass
+class FtxFundOpenFilledMessage:
+    id: uuid.UUID
+    fund_used: Decimal
+    spot_notional_value: Decimal
+
+
+@dataclass
+class FtxOrderMessage:
+    id: str
+    market: str
+    type: FtxOrderType
+    side: Side
+    size: Decimal
+    price: Decimal
+    status: FtxOrderStatus
+    filled_size: Decimal
+    avg_fill_price: Decimal
+    create_timestamp: float
 
 
 @dataclass
@@ -121,6 +172,8 @@ class FtxTicker:
             timestamp=ticker_info['time'],
         )
 
+    def is_delay(self, threshold: float) -> bool:
+        return time.time() - self.timestamp > threshold
 
 class Side(Enum):
     BUY = 'buy'
@@ -130,3 +183,18 @@ class Side(Enum):
 class FtxOrderType(Enum):
     LIMIT ='limit'
     MARKET = 'market'
+
+
+class FtxOrderStatus(Enum):
+    NEW = "new"
+    OPEN = "open"
+    CLOSED = "closed"
+
+    @classmethod
+    def str_entry(cls, status: str) -> FtxOrderStatus:
+        if status == 'new':
+            return cls.NEW
+        elif status == 'open':
+            return cls.OPEN
+        else:
+            return cls.CLOSED
