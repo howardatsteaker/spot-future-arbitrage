@@ -404,7 +404,7 @@ class SubProcess:
             # order size
             future_size = future_ticker.bid_size
             spot_size = spot_ticker.ask_size
-            order_size = self._get_order_size(future_size, spot_size)
+            order_size = self._get_open_order_size(future_size, spot_size)
             if order_size <= 0:
                 return
 
@@ -533,12 +533,22 @@ class SubProcess:
         else:
             return None
 
-    def _get_order_size(self, future_size: Decimal, spot_size: Decimal) -> Decimal:
+    def _get_open_order_size(self, future_size: Decimal, spot_size: Decimal) -> Decimal:
         if self.config.min_order_size_mode:
             return self.combined_trading_rule.min_order_size
 
         available_size = min(future_size, spot_size)        
         required_size = available_size * self.config.open_order_size_multiplier
+        order_size = max(required_size, self.combined_trading_rule.min_order_size)
+
+        return order_size // self.combined_trading_rule.min_order_size * self.combined_trading_rule.min_order_size
+
+    def _get_close_order_size(self, future_size: Decimal, spot_size: Decimal) -> Decimal:
+        if self.config.min_order_size_mode:
+            return self.combined_trading_rule.min_order_size
+
+        available_size = min(future_size, spot_size)        
+        required_size = available_size * self.config.close_order_size_multiplier
         order_size = max(required_size, self.combined_trading_rule.min_order_size)
 
         return order_size // self.combined_trading_rule.min_order_size * self.combined_trading_rule.min_order_size
@@ -597,7 +607,7 @@ class SubProcess:
             return
 
         # order size
-        order_size = self._get_order_size(future_size, spot_size)
+        order_size = self._get_close_order_size(future_size, spot_size)
         order_size = min(position_size, order_size)
         if order_size <= 0:
             return
