@@ -426,6 +426,13 @@ class SubProcess:
                 if order_size <= 0:
                     return
 
+            # if borrow, calculate whether margin open is profitable or not
+            if msg.borrow > 0:
+                hours_to_expiry = days_to_expiry * Decimal('24')
+                borrow_pnl = basis * order_size - 2 * (future_price + spot_price) * self.fee_rate.taker_fee_rate - msg.borrow * self.ewma_interest_rate.hourly_rate * hours_to_expiry
+                if borrow_pnl <= 0:
+                    return
+
             # place order
             spot_place_order = self.exchange.place_market_order(self.hedge_pair.spot, Side.BUY, order_size)
             future_place_order = self.exchange.place_market_order(self.hedge_pair.future, Side.SELL, order_size)
