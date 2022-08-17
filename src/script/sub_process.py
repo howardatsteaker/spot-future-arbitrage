@@ -24,6 +24,7 @@ from src.exchange.ftx.ftx_data_type import (
     FtxFundResponseMessage,
     FtxHedgePair,
     FtxInterestRateMessage,
+    FtxLeverageInfo,
     FtxLeverageMessage,
     FtxOrderMessage,
     FtxOrderStatus,
@@ -60,7 +61,7 @@ class SubProcess:
         self.ewma_interest_rate: Ftx_EWMA_InterestRate = None
         self.fee_rate: FtxFeeRate = None
         self.collateral_weight: FtxCollateralWeight = None
-        self.leverage: Decimal = None
+        self.leverage_info: FtxLeverageInfo = None
 
         self.exchange = FtxExchange(config.api_key, config.api_secret, config.subaccount_name)
         self.exchange.ws_register_ticker_channel([hedge_pair.spot, hedge_pair.future])
@@ -96,7 +97,7 @@ class SubProcess:
             return False
         if self.future_expiry_ts is None:
             return False
-        if self.leverage is None:
+        if self.leverage_info is None:
             return False
         if self.combined_trading_rule is None:
             return False
@@ -291,7 +292,7 @@ class SubProcess:
                     self.collateral_weight = msg.collateral_weight
                     self.logger.debug(f"{self.hedge_pair.coin} Receive collateral weight message: {msg.collateral_weight}")
                 elif type(msg) is FtxLeverageMessage:
-                    self.leverage = msg.leverage
+                    self.leverage_info = msg.leverage
                     self.logger.debug(f"{self.hedge_pair.coin} Receive leverage message: {msg.leverage}X")
                 elif type(msg) is FtxFundResponseMessage:
                     self._fund_manager_response_event.set()
@@ -351,6 +352,10 @@ class SubProcess:
 
     async def open_position(self):
         if self.ready:
+            # if current leverage is too high, openning new position is disabled
+            if self.leverage_info.current_leverage > self.config.leverage_limit:
+                return
+
             # wait ticker notify
             ticker_notify_type = await self.wait_either_one_ticker_condition_notify()
             self.logger.info(f"Get {ticker_notify_type.value} ticker notification")
@@ -369,7 +374,7 @@ class SubProcess:
             future_price = future_ticker.bid
             spot_price = spot_ticker.ask
             basis = future_price - spot_price
-            collateral = future_price / self.leverage - spot_price * self.collateral_weight.weight
+            collateral = future_price / self.leverage_info.max_leverage - spot_price * self.collateral_weight.weight
             fee = (spot_price + future_price) * self.fee_rate.taker_fee_rate
             cost = spot_price + collateral + fee
             profit = basis - 2 * fee
@@ -470,7 +475,7 @@ class SubProcess:
                         # log open pnl rate, apr
                         real_basis = future_order_msg.avg_fill_price - spot_order_msg.avg_fill_price
                         real_profit = real_basis - 2 * self.fee_rate.taker_fee_rate
-                        real_collateral = future_order_msg.avg_fill_price / self.leverage - spot_order_msg.avg_fill_price * self.collateral_weight.weight
+                        real_collateral = future_order_msg.avg_fill_price / self.leverage_info.max_leverage - spot_order_msg.avg_fill_price * self.collateral_weight.weight
                         real_fee = (future_order_msg.avg_fill_price + spot_order_msg.avg_fill_price) * self.fee_rate.taker_fee_rate
                         real_cost = spot_order_msg.avg_fill_price + real_collateral + real_fee
                         real_pnl_rate = real_profit / real_cost

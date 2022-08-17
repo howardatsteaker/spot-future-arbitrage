@@ -32,3 +32,5 @@ strategy:
   min_order_size_mode: False
   open_order_size_multiplier: 0.1
   close_order_size_multiplier: 0.2
+  max_leverage: 3
+  leverage_limit: 2.95  # if account leverage is above this upper limit, openning new position is prohibited

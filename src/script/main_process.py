@@ -21,6 +21,7 @@ from src.exchange.ftx.ftx_data_type import (
     FtxFundOpenFilledMessage,
     FtxFundRequestMessage,
     FtxInterestRateMessage,
+    FtxLeverageInfo,
     FtxLeverageMessage,
     FtxOrderMessage,
     FtxOrderStatus,
@@ -49,7 +50,7 @@ class MainProcess:
             self.ewma_interest_rate = Ftx_EWMA_InterestRate(config.interest_rate_lookback_days)
             self.fee_rate = FtxFeeRate()
             self.collateral_weights: Dict[str, FtxCollateralWeight] = {}
-            self.leverage: Decimal = Decimal('1')
+            self.leverage_info = FtxLeverageInfo()
 
             # params initializer, to notify sub process all params are ready
             self._trading_rules_ready_event = asyncio.Event()
@@ -323,10 +324,17 @@ class MainProcess:
         while True:
             try:
                 account_info = await self.exchange.get_account()
-                self.leverage = Decimal(str(account_info['leverage']))
+                account_value = Decimal(str(account_info['totalAccountValue']))
+                position_value = Decimal(str(account_info['totalPositionSize']))
+                current_leverage = position_value / account_value
+                self.leverage_info = FtxLeverageInfo(
+                    max_leverage=Decimal(str(account_info['leverage'])),
+                    account_value=account_value,
+                    position_value=position_value,
+                    current_leverage=current_leverage)
                 self._account_info_ready_event.set()
                 for (conn, _) in self._connections.values():
-                    conn.send(FtxLeverageMessage(self.leverage))
+                    conn.send(FtxLeverageMessage(self.leverage_info))
                 await asyncio.sleep(self.ACCOUNT_INFO_POLLING_INTERVAL)
             except asyncio.CancelledError:
                 raise
@@ -384,7 +392,7 @@ class MainProcess:
                         conn1.send(FtxFeeRateMessage(fee_rate=self.fee_rate))
                         if self.collateral_weights.get(coin):
                             conn1.send(FtxCollateralWeightMessage(collateral_weight=self.collateral_weights[coin]))
-                        conn1.send(FtxLeverageMessage(leverage=self.leverage))
+                        conn1.send(FtxLeverageMessage(leverage=self.leverage_info))
 
             except asyncio.CancelledError:
                 raise

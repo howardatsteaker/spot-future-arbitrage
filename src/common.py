@@ -40,7 +40,9 @@ class Config:
             apr_to_open_position: Decimal,
             min_order_size_mode: bool,
             open_order_size_multiplier: Decimal,
-            close_order_size_multiplier: Decimal,):
+            close_order_size_multiplier: Decimal,
+            max_leverage: Decimal,
+            leverage_limit: Decimal):
         self.exchange=exchange
         self.api_key=api_key
         self.api_secret=api_secret
@@ -54,6 +56,8 @@ class Config:
         self.min_order_size_mode = min_order_size_mode
         self.open_order_size_multiplier = open_order_size_multiplier
         self.close_order_size_multiplier = close_order_size_multiplier
+        self.max_leverage = max_leverage
+        self.leverage_limit = leverage_limit
 
 
     @classmethod
@@ -75,4 +79,6 @@ class Config:
             min_order_size_mode=data['strategy']['min_order_size_mode'],
             open_order_size_multiplier=Decimal(str(data['strategy']['open_order_size_multiplier'])),
             close_order_size_multiplier=Decimal(str(data['strategy']['close_order_size_multiplier'])),
+            max_leverage=Decimal(str(data['strategy']['max_leverage'])),
+            leverage_limit=Decimal(str(data['strategy']['leverage_limit'])),
         )

@@ -90,6 +90,14 @@ class FtxHedgePair:
 
 
 @dataclass
+class FtxLeverageInfo:
+    max_leverage: Decimal = Decimal(1)
+    account_value: Decimal = Decimal(0)
+    position_value: Decimal = Decimal(0)
+    current_leverage: Decimal = Decimal(0)
+
+
+@dataclass
 class FtxTradingRuleMessage:
     trading_rule: FtxTradingRule
 
@@ -111,7 +119,7 @@ class FtxCollateralWeightMessage:
 
 @dataclass
 class FtxLeverageMessage:
-    leverage: Decimal
+    leverage: FtxLeverageInfo
 
 
 @dataclass
