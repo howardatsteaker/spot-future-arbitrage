@@ -42,7 +42,10 @@ class Config:
             open_order_size_multiplier: Decimal,
             close_order_size_multiplier: Decimal,
             max_leverage: Decimal,
-            leverage_limit: Decimal):
+            leverage_limit: Decimal,
+            seconds_before_expiry_to_stop_open_position: float,
+            seconds_before_expiry_to_stop_close_position: float,
+            release_mode: bool):
         self.exchange=exchange
         self.api_key=api_key
         self.api_secret=api_secret
@@ -58,6 +61,11 @@ class Config:
         self.close_order_size_multiplier = close_order_size_multiplier
         self.max_leverage = max_leverage
         self.leverage_limit = leverage_limit
+        assert seconds_before_expiry_to_stop_open_position >= seconds_before_expiry_to_stop_close_position, "stop open should greater than or equal to stop close"
+        assert seconds_before_expiry_to_stop_close_position > 3600, "stop close should greater than 3600s (1 hour)"
+        self.seconds_before_expiry_to_stop_open_position = seconds_before_expiry_to_stop_open_position
+        self.seconds_before_expiry_to_stop_close_position = seconds_before_expiry_to_stop_close_position
+        self.release_mode = release_mode
 
 
     @classmethod
@@ -81,4 +89,7 @@ class Config:
             close_order_size_multiplier=Decimal(str(data['strategy']['close_order_size_multiplier'])),
             max_leverage=Decimal(str(data['strategy']['max_leverage'])),
             leverage_limit=Decimal(str(data['strategy']['leverage_limit'])),
+            seconds_before_expiry_to_stop_open_position=data['strategy']['seconds_before_expiry_to_stop_open_position'],
+            seconds_before_expiry_to_stop_close_position=data['strategy']['seconds_before_expiry_to_stop_close_position'],
+            release_mode=data['strategy']['release_mode'],
         )

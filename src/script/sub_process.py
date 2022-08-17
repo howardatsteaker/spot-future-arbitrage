@@ -101,6 +101,8 @@ class SubProcess:
             return False
         if self.combined_trading_rule is None:
             return False
+        if time.time() - self.indicator.last_update_timestamp > 3600:
+            return False
         return True
 
     def _init_get_logger(self):
@@ -351,6 +353,8 @@ class SubProcess:
             return TickerNotifyType.FUTURE
 
     async def open_position(self):
+        if self.config.release_mode:
+            return
         if self.ready:
             # if current leverage is too high, openning new position is disabled
             if self.leverage_info.current_leverage > self.config.leverage_limit:
@@ -400,7 +404,7 @@ class SubProcess:
             # order size
             future_size = future_ticker.bid_size
             spot_size = spot_ticker.ask_size
-            order_size = self._get_open_order_size(future_size, spot_size)
+            order_size = self._get_order_size(future_size, spot_size)
             if order_size <= 0:
                 return
 
@@ -529,7 +533,7 @@ class SubProcess:
         else:
             return None
 
-    def _get_open_order_size(self, future_size: Decimal, spot_size: Decimal) -> Decimal:
+    def _get_order_size(self, future_size: Decimal, spot_size: Decimal) -> Decimal:
         if self.config.min_order_size_mode:
             return self.combined_trading_rule.min_order_size
 
@@ -543,12 +547,142 @@ class SubProcess:
         max_order_size = fund_supply / cost
         return max_order_size // self.combined_trading_rule.min_order_size * self.combined_trading_rule.min_order_size
 
+    async def close_position(self):
+        if not self.ready:
+            return
+        if self.spot_position_size < self.combined_trading_rule.min_order_size:
+            return
+        if self.future_position_size > -self.combined_trading_rule.min_order_size:
+            return
+        position_size = min(self.spot_position_size, -self.future_position_size)
+
+        # wait ticker notify
+        ticker_notify_type = await self.wait_either_one_ticker_condition_notify()
+        self.logger.info(f"Get {ticker_notify_type.value} ticker notification")
+
+        spot_ticker = self.exchange.tickers[self.hedge_pair.spot]
+        future_ticker = self.exchange.tickers[self.hedge_pair.future]
+
+        if spot_ticker.is_delay(self.config.ticker_delay_threshold):
+            self.logger.warning(f"{spot_ticker.symbol} ticker is delay")
+            return
+        if future_ticker.is_delay(self.config.ticker_delay_threshold):
+            self.logger.warning(f"{future_ticker.symbol} ticker is delay")
+            return
+
+        spot_price = spot_ticker.bid
+        spot_size = spot_ticker.bid_size
+        future_price = future_ticker.ask
+        future_size = future_ticker.ask_size
+        close_basis = future_price - spot_price
+
+        to_close = False
+        if close_basis <= 0:
+            to_close = True
+
+        open_basis = self.future_entry_price - self.spot_entry_price
+        open_fee = (self.future_entry_price + self.spot_entry_price) * self.fee_rate.taker_fee_rate
+        close_fee = (future_price + spot_price) * self.fee_rate.taker_fee_rate
+        profit = open_basis - close_basis - open_fee - close_fee
+        if not to_close and not profit > 0:
+            return
+
+        if not to_close and self.config.release_mode:
+            to_close = True
+
+        if not to_close and close_basis < self.indicator.lower_threshold:
+            to_close = True
+
+        if not to_close:
+            return
+
+        # order size
+        order_size = self._get_order_size(future_size, spot_size)
+        order_size = min(position_size, order_size)
+        if order_size <= 0:
+            return
+
+        # place order
+        spot_place_order = self.exchange.place_market_order(self.hedge_pair.spot, Side.SELL, order_size)
+        future_place_order = self.exchange.place_market_order(self.hedge_pair.future, Side.BUY, order_size)
+        spot_order_result, future_order_result = await asyncio.gather(spot_place_order, future_place_order, return_exceptions=True)
+        both_results_ok = True
+        if type(spot_order_result) is Exception:
+            self.logger.error(f"Unexpected error while place {self.hedge_pair.spot} market order.", exc_info=True)
+            both_results_ok = False
+        if type(future_order_result) is Exception:
+            self.logger.error(f"Unexpected error while place {self.hedge_pair.future} market order.", exc_info=True)
+            both_results_ok = False
+
+        if both_results_ok:
+            spot_order_id = str(spot_order_result['id'])
+            self._ws_orders_conds[spot_order_id] = asyncio.Condition()
+            future_order_id = str(future_order_result['id'])
+            self._ws_orders_conds[future_order_id] = asyncio.Condition()
+            spot_order_msg, future_order_msg = await asyncio.gather(self._wait_order(spot_order_id), self._wait_order(future_order_id))
+            
+            if spot_order_msg is None:
+                self.logger.warning(f"Order {spot_order_id} not found or not closed")
+            else:
+                # update spot position size, entry price
+                spot_new_size = self.spot_position_size - spot_order_msg.filled_size
+                if spot_new_size == 0:
+                    self.spot_entry_price = None
+                self.spot_position_size = spot_new_size
+            
+            if future_order_msg is None:
+                self.logger.warning(f"Order {future_order_id} not found or not closed")
+            else:
+                # update future position size, entry price
+                future_new_size = self.future_position_size + future_order_msg.filled_size
+                if future_new_size == 0:
+                    self.future_entry_price = None
+                self.future_position_size = future_new_size
+
+            if spot_order_msg and future_order_msg:
+                # check filled size
+                if spot_order_msg.filled_size != future_order_msg.filled_size:
+                    self.logger.warning(f"Filled size is not matched, {spot_order_msg.market}: {spot_order_msg.filled_size}, {future_order_msg.market}: {future_order_msg.filled_size}")
+                else:
+                    # log close pnl rate, apr
+                    collateral = self.future_entry_price / self.leverage_info.max_leverage - self.spot_entry_price * self.collateral_weight.weight
+                    cost = self.spot_entry_price + collateral + open_fee
+                    pnl_rate = profit / cost
+                    days_to_expiry = Decimal(str(self.future_expiry_ts - time.time() / 86400))
+                    apr = pnl_rate * Decimal('365') / days_to_expiry
+                    real_basis = future_order_msg.avg_fill_price - spot_order_msg.avg_fill_price
+                    real_close_fee = (future_order_msg.avg_fill_price + spot_order_msg.avg_fill_price) * self.fee_rate.taker_fee_rate
+                    real_profit = open_basis - real_basis - open_fee - real_close_fee
+                    real_pnl_rate = real_profit / cost
+                    real_apr = real_pnl_rate * Decimal('365') / days_to_expiry
+                    self.logger.info(f"{self.hedge_pair.future} Close APR: {apr:.2%}, Basis: {close_basis}, Indicator low: {self.indicator.lower_threshold}, size: {min(spot_size, future_size)}, filled APR: {real_apr:.2%}, Basis: {real_basis}, size: {spot_order_msg.filled_size}")
+
+            # TODO: inform main process fund release
+
+    async def open_position_loop(self):
+        while self.future_expiry_ts - time.time() > self.config.seconds_before_expiry_to_stop_open_position:
+            try:
+                await self.open_position()
+                await asyncio.sleep(0.2)
+            except Exception:
+                self.logger.error("Unexpected error while open position.", exc_info=True)
+                await asyncio.sleep(5)
+
+    async def close_position_loop(self):
+        while self.future_expiry_ts - time.time()> self.config.seconds_before_expiry_to_stop_close_position:
+            try:
+                await self.close_position()
+                await asyncio.sleep(0.2)
+            except Exception:
+                self.logger.error("Unexpected error while close position.", exc_info=True)
+                await asyncio.sleep(5)
+
     async def run(self):
         try:
             self.start_network()
-            while True:
-                await self.open_position()
-                await asyncio.sleep(0)
+            open_task = self.open_position_loop()
+            close_task = self.close_position_loop()
+            await asyncio.gather(open_task, close_task)
         except KeyboardInterrupt:
             await self.exchange.close()
 

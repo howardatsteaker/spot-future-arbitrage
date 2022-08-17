@@ -34,3 +34,6 @@ strategy:
   close_order_size_multiplier: 0.2
   max_leverage: 3
   leverage_limit: 2.95  # if account leverage is above this upper limit, openning new position is prohibited
+  seconds_before_expiry_to_stop_open_position: 86400
+  seconds_before_expiry_to_stop_close_position: 3900
+  release_mode: False
