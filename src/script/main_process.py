@@ -9,7 +9,7 @@ from concurrent.futures import ProcessPoolExecutor, Future
 import multiprocessing as mp
 from multiprocessing.connection import Connection
 import dateutil.parser
-from .fund_manager import FundManager
+from src.script.fund_manager import FundManager
 from src.common import Config, Exchange
 from src.exchange.ftx.ftx_client import FtxExchange
 from src.exchange.ftx.ftx_data_type import (
@@ -83,7 +83,7 @@ class MainProcess:
             self.exchange.ws_register_order_channel()
 
             # fund manager
-            self.fund_manager = FundManager()
+            self.fund_manager = FundManager(leverage_limit=config.leverage_limit)
 
     def _init_get_logger(self):
         log = self.config.log
@@ -346,7 +346,7 @@ class MainProcess:
         while True:
             try:
                 account_info = await self.exchange.get_account()
-                await self.fund_manager.update_free_collateral(Decimal(str(account_info['freeCollateral'])))
+                await self.fund_manager.update_account_state(account_info)
                 balances = await self.exchange.get_balances()
                 usd_info = next(b for b in balances if b['coin'] == 'USD')
                 await self.fund_manager.update_usd_state(Decimal(str(usd_info['free'])), Decimal(str(usd_info['spotBorrow'])))
