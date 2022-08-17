@@ -1,10 +1,8 @@
-import asyncio
 import time
 from typing import List
 from decimal import Decimal
 import pandas as pd
 import dateutil.parser
-import uvloop
 from src.exchange.ftx.ftx_client import FtxExchange
 from src.exchange.ftx.ftx_data_type import FtxCandleResolution, FtxHedgePair
 
@@ -23,6 +21,7 @@ class MACD:
 
         self.upper_threshold: Decimal = None
         self.lower_threshold: Decimal = None
+        self.last_update_timestamp: float = 0.0
 
         self.hedge_pair = hedge_pair
         self.fast_length = fast_length
@@ -38,7 +37,7 @@ class MACD:
     async def update_indicator_info(self):
         client = FtxExchange('', '')
         resolution = FtxCandleResolution.ONE_HOUR
-        end_ts = time.time()
+        end_ts = (time.time() // resolution.value - 1) * resolution.value
         start_ts = end_ts - self.slow_length * resolution.value
         spot_candles = await client.get_candles(self.hedge_pair.spot, resolution, start_ts, end_ts)
         if len(spot_candles) == 0:
@@ -73,6 +72,8 @@ class MACD:
 
         self.upper_threshold = Decimal(str(upper_threshold))
         self.lower_threshold = Decimal(str(lower_threshold))
+        self.last_update_timestamp = concat_df.index[-1].timestamp()
+        print(concat_df.tail())
 
     def candles_to_df(self, candles: List[dict]) -> pd.DataFrame:
         df = pd.DataFrame.from_records(candles)
