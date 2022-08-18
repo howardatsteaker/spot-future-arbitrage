@@ -574,6 +574,10 @@ class SubProcess:
     async def close_position(self):
         if not self.ready:
             return
+        if self.spot_entry_price is None:
+            return
+        if self.future_entry_price is None:
+            return
         if self.spot_position_size < self.combined_trading_rule.min_order_size:
             return
         if self.future_position_size > -self.combined_trading_rule.min_order_size:
