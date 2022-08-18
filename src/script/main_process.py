@@ -380,7 +380,6 @@ class MainProcess:
                         self._connections[hedge_pair.coin] = (conn1, conn2)
                         sub_process_future = self._loop.run_in_executor(self._executor, run_sub_process, hedge_pair, self.config, conn2)
                         self._sub_process_futures[coin] = sub_process_future
-                        self._sub_process_notify_conditions[coin] = asyncio.Condition()
                         self._sub_process_listen_tasks[coin] = asyncio.create_task(self._listen_sub_process_msg(coin))
 
                         # notify params
