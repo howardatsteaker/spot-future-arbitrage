@@ -311,7 +311,7 @@ class SubProcess:
                 self.logger.debug(f"{self.hedge_pair.coin} Receive leverage message: {msg.leverage}X")
             elif type(msg) is FtxFundResponseMessage:
                 self._fund_manager_response_event.set()
-                self._fund_manager_response_msg = msg
+                self._fund_manager_response_messages[msg.id] = msg
             elif type(msg) is FtxOrderMessage:
                 order_id = msg.id
                 self._ws_orders[order_id] = msg
@@ -696,7 +696,7 @@ class SubProcess:
                 await self.open_position()
                 await asyncio.sleep(0.2)
             except Exception:
-                self.logger.error("Unexpected error while open position.", exc_info=True)
+                self.logger.error(f"Unexpected error while open {self.hedge_pair.coin} position.", exc_info=True)
                 await asyncio.sleep(5)
 
     async def close_position_loop(self):
@@ -706,7 +706,7 @@ class SubProcess:
                 await self.close_position()
                 await asyncio.sleep(0.2)
             except Exception:
-                self.logger.error("Unexpected error while close position.", exc_info=True)
+                self.logger.error(f"Unexpected error while close {self.hedge_pair.coin} position.", exc_info=True)
                 await asyncio.sleep(5)
 
     async def run(self):
