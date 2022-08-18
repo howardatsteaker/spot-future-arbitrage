@@ -73,7 +73,6 @@ class MACD:
         self.upper_threshold = Decimal(str(upper_threshold))
         self.lower_threshold = Decimal(str(lower_threshold))
         self.last_update_timestamp = concat_df.index[-1].timestamp()
-        print(concat_df.tail())
 
     def candles_to_df(self, candles: List[dict]) -> pd.DataFrame:
         df = pd.DataFrame.from_records(candles)
