@@ -201,6 +201,8 @@ class FtxExchange:
         }
         if price:
             data['price'] = str(price)
+        else:
+            data['price'] = None
         if reduce_only:
             data['reduceOnly'] = reduce_only
         if ioc:
@@ -218,6 +220,7 @@ class FtxExchange:
                 self.logger().info(f"Ftx place order success: {result}")
                 return result
             else:
+                self.logger().warning(f"Fail to place order. Response msg: {res_json}")
                 # TODO raise a proper exception
                 raise Exception
     
