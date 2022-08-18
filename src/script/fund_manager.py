@@ -1,5 +1,5 @@
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Dict
 from uuid import UUID
@@ -13,7 +13,7 @@ class FundManager:
     free_collateral: Decimal = Decimal(0)
     free_usd: Decimal = Decimal(0)
     borrowed_usd: Decimal = Decimal(0)
-    collateral_freeze: Dict[UUID, Decimal] = {}
+    collateral_freeze: Dict[UUID, Decimal] = field(default_factory=lambda: dict())
     leverage_info: FtxLeverageInfo = FtxLeverageInfo()
     lock: asyncio.Lock = asyncio.Lock()
 
