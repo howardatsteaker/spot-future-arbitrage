@@ -55,6 +55,9 @@ class SubProcess:
         self.conn = conn
         self.logger = self._init_get_logger()
 
+        self._loop = asyncio.get_event_loop()
+        self._main_process_notify_event = asyncio.Event()
+
         self.spot_trading_rule: FtxTradingRule = None
         self.future_trading_rule: FtxTradingRule = None
         self.combined_trading_rule: CombinedTradingRule = None
@@ -92,17 +95,23 @@ class SubProcess:
         # check conditions is not None
         spot_cond = self.exchange.ticker_notify_conds.get(self.hedge_pair.spot)
         if spot_cond is None:
+            self.logger.debug(f"{self.hedge_pair.spot} ticker condition not ready")
             return False
         future_cond = self.exchange.ticker_notify_conds.get(self.hedge_pair.future)
         if future_cond is None:
+            self.logger.debug(f"{self.hedge_pair.future} ticker condition not ready")
             return False
         if self.future_expiry_ts is None:
+            self.logger.debug(f"{self.hedge_pair.coin} expiry ts not ready")
             return False
         if self.leverage_info is None:
+            self.logger.debug(f"{self.hedge_pair.coin} leverage info not ready")
             return False
         if self.combined_trading_rule is None:
+            self.logger.debug(f"{self.hedge_pair.coin} combined trading rule not ready")
             return False
-        if time.time() - self.indicator.last_update_timestamp > 3600:
+        if time.time() - self.indicator.last_update_timestamp > 7200:
+            self.logger.debug(f"{self.hedge_pair.coin} indicator delay and not ready")
             return False
         return True
 
@@ -270,47 +279,48 @@ class SubProcess:
             self._indicator_polling_loop_task = None
 
     async def _consume_main_process_msg(self):
+        self._loop.add_reader(self.conn.fileno(), self._main_process_notify_event.set)
         while True:
-            if self.conn.poll():
-                msg = self.conn.recv()
-                if type(msg) is FtxTradingRuleMessage:
-                    trading_rule = msg.trading_rule
-                    if trading_rule.symbol == self.hedge_pair.spot:
-                        self.spot_trading_rule = trading_rule
-                    elif trading_rule.symbol == self.hedge_pair.future:
-                        self.future_trading_rule = trading_rule
-                    self.logger.debug(f"{self.hedge_pair.coin} Receive trading rule message: {trading_rule}")
-                    # update the least common multiple of min order size
-                    if self.spot_trading_rule is not None and self.future_trading_rule is not None:
-                        lcm_min_order_size = max(self.spot_trading_rule.min_order_size, self.future_trading_rule.min_order_size)
-                        assert lcm_min_order_size % self.spot_trading_rule.min_order_size == 0, f"{lcm_min_order_size} is not a multiple of spot min order size {self.spot_trading_rule.min_order_size}"
-                        assert lcm_min_order_size % self.future_trading_rule.min_order_size == 0, f"{lcm_min_order_size} is not a multiple of future min order size {self.future_trading_rule.min_order_size}"
-                        self.combined_trading_rule = CombinedTradingRule(lcm_min_order_size)
-                elif type(msg) is FtxInterestRateMessage:
-                    self.ewma_interest_rate = msg.ewma_interest_rate
-                    self.logger.debug(f"{self.hedge_pair.coin} Receive interest rate message: {msg.ewma_interest_rate}")
-                elif type(msg) is FtxFeeRateMessage:
-                    self.fee_rate = msg.fee_rate
-                    self.logger.debug(f"{self.hedge_pair.coin} Receive fee rate message: {msg.fee_rate}")
-                elif type(msg) is FtxCollateralWeightMessage:
-                    self.collateral_weight = msg.collateral_weight
-                    self.logger.debug(f"{self.hedge_pair.coin} Receive collateral weight message: {msg.collateral_weight}")
-                elif type(msg) is FtxLeverageMessage:
-                    self.leverage_info = msg.leverage
-                    self.logger.debug(f"{self.hedge_pair.coin} Receive leverage message: {msg.leverage}X")
-                elif type(msg) is FtxFundResponseMessage:
-                    self._fund_manager_response_event.set()
-                    self._fund_manager_response_msg = msg
-                elif type(msg) is FtxOrderMessage:
-                    order_id = msg.id
-                    self._ws_orders[order_id] = msg
-                    order_cond = self._ws_orders_conds.get(order_id)
-                    if order_cond:
-                        async with order_cond:
-                            order_cond.notify_all()
-                else:
-                    self.logger.warning(f"{self.hedge_pair.coin} receive unknown message: {msg}")
-            await asyncio.sleep(1)
+            if not self.conn.poll():
+                await self._main_process_notify_event.wait()
+            msg = self.conn.recv()
+            if type(msg) is FtxTradingRuleMessage:
+                trading_rule = msg.trading_rule
+                if trading_rule.symbol == self.hedge_pair.spot:
+                    self.spot_trading_rule = trading_rule
+                elif trading_rule.symbol == self.hedge_pair.future:
+                    self.future_trading_rule = trading_rule
+                self.logger.debug(f"{self.hedge_pair.coin} Receive trading rule message: {trading_rule}")
+                # update the least common multiple of min order size
+                if self.spot_trading_rule is not None and self.future_trading_rule is not None:
+                    lcm_min_order_size = max(self.spot_trading_rule.min_order_size, self.future_trading_rule.min_order_size)
+                    assert lcm_min_order_size % self.spot_trading_rule.min_order_size == 0, f"{lcm_min_order_size} is not a multiple of spot min order size {self.spot_trading_rule.min_order_size}"
+                    assert lcm_min_order_size % self.future_trading_rule.min_order_size == 0, f"{lcm_min_order_size} is not a multiple of future min order size {self.future_trading_rule.min_order_size}"
+                    self.combined_trading_rule = CombinedTradingRule(lcm_min_order_size)
+            elif type(msg) is FtxInterestRateMessage:
+                self.ewma_interest_rate = msg.ewma_interest_rate
+                self.logger.debug(f"{self.hedge_pair.coin} Receive interest rate message: {msg.ewma_interest_rate}")
+            elif type(msg) is FtxFeeRateMessage:
+                self.fee_rate = msg.fee_rate
+                self.logger.debug(f"{self.hedge_pair.coin} Receive fee rate message: {msg.fee_rate}")
+            elif type(msg) is FtxCollateralWeightMessage:
+                self.collateral_weight = msg.collateral_weight
+                self.logger.debug(f"{self.hedge_pair.coin} Receive collateral weight message: {msg.collateral_weight}")
+            elif type(msg) is FtxLeverageMessage:
+                self.leverage_info = msg.leverage
+                self.logger.debug(f"{self.hedge_pair.coin} Receive leverage message: {msg.leverage}X")
+            elif type(msg) is FtxFundResponseMessage:
+                self._fund_manager_response_event.set()
+                self._fund_manager_response_msg = msg
+            elif type(msg) is FtxOrderMessage:
+                order_id = msg.id
+                self._ws_orders[order_id] = msg
+                order_cond = self._ws_orders_conds.get(order_id)
+                if order_cond:
+                    async with order_cond:
+                        order_cond.notify_all()
+            else:
+                self.logger.warning(f"{self.hedge_pair.coin} receive unknown message: {msg}")
 
     async def _indicator_polling_loop(self):
         while True:
@@ -364,17 +374,19 @@ class SubProcess:
 
             # wait ticker notify
             ticker_notify_type = await self.wait_either_one_ticker_condition_notify()
-            self.logger.info(f"Get {ticker_notify_type.value} ticker notification")
+            self.logger.debug(f"Get {ticker_notify_type.value} ticker notification")
 
             spot_ticker = self.exchange.tickers[self.hedge_pair.spot]
             future_ticker = self.exchange.tickers[self.hedge_pair.future]
 
-            if spot_ticker.is_delay(self.config.ticker_delay_threshold):
-                self.logger.warning(f"{spot_ticker.symbol} ticker is delay")
-                return
-            if future_ticker.is_delay(self.config.ticker_delay_threshold):
-                self.logger.warning(f"{future_ticker.symbol} ticker is delay")
-                return
+            if ticker_notify_type is TickerNotifyType.SPOT:
+                if spot_ticker.is_delay(self.config.ticker_delay_threshold):
+                    self.logger.warning(f"{spot_ticker.symbol} ticker is delay")
+                    return
+            else:
+                if future_ticker.is_delay(self.config.ticker_delay_threshold):
+                    self.logger.warning(f"{future_ticker.symbol} ticker is delay")
+                    return
 
             # get expected profit, cost, fee, etc...
             future_price = future_ticker.bid
@@ -570,17 +582,19 @@ class SubProcess:
 
         # wait ticker notify
         ticker_notify_type = await self.wait_either_one_ticker_condition_notify()
-        self.logger.info(f"Get {ticker_notify_type.value} ticker notification")
+        self.logger.debug(f"Get {ticker_notify_type.value} ticker notification")
 
         spot_ticker = self.exchange.tickers[self.hedge_pair.spot]
         future_ticker = self.exchange.tickers[self.hedge_pair.future]
 
-        if spot_ticker.is_delay(self.config.ticker_delay_threshold):
-            self.logger.warning(f"{spot_ticker.symbol} ticker is delay")
-            return
-        if future_ticker.is_delay(self.config.ticker_delay_threshold):
-            self.logger.warning(f"{future_ticker.symbol} ticker is delay")
-            return
+        if ticker_notify_type is TickerNotifyType.SPOT:
+            if spot_ticker.is_delay(self.config.ticker_delay_threshold):
+                self.logger.warning(f"{spot_ticker.symbol} ticker is delay")
+                return
+        else:
+            if future_ticker.is_delay(self.config.ticker_delay_threshold):
+                self.logger.warning(f"{future_ticker.symbol} ticker is delay")
+                return
 
         spot_price = spot_ticker.bid
         spot_size = spot_ticker.bid_size
@@ -702,7 +716,8 @@ class SubProcess:
 
 
 def run_sub_process(hedge_pair: FtxHedgePair, config: Config, conn: Connection):
+    asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
     sub_process = SubProcess(hedge_pair, config, conn)
     sub_process.logger.debug(f'start to run {hedge_pair.coin} process')
-    uvloop.install()
-    asyncio.run(sub_process.run())
+    loop =asyncio.get_event_loop()
+    loop.run_until_complete(sub_process.run())
