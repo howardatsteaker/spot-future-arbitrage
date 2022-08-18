@@ -212,32 +212,6 @@ class MainProcess:
                 conn.send(FtxTradingRuleMessage(self.trading_rules[future]))
 
     async def _update_hedge_pair(self, market_infos: dict):
-        # # For test
-        # self.hedge_pairs['BTC'] = FtxHedgePair(
-        #     coin='BTC',
-        #     spot='BTC/USD',
-        #     future=f'BTC-{self.config.season}'
-        # )
-        # self.hedge_pairs['ETH'] = FtxHedgePair(
-        #     coin='ETH',
-        #     spot='ETH/USD',
-        #     future=f'ETH-{self.config.season}'
-        # )
-        # self.hedge_pairs['AMD'] = FtxHedgePair(
-        #     coin='AMD',
-        #     spot='AMD/USD',
-        #     future=f'AMD-{self.config.season}'
-        # )
-        # self.hedge_pairs['DOGE'] = FtxHedgePair(
-        #     coin='DOGE',
-        #     spot='DOGE/USD',
-        #     future=f'DOGE-{self.config.season}'
-        # )
-        # self.hedge_pairs['AMC'] = FtxHedgePair(
-        #     coin='AMC',
-        #     spot='AMC/USD',
-        #     future=f'AMC-{self.config.season}'
-        # )
         symbol_set = set([info['name'] for info in market_infos if info['enabled']])
         regex = re.compile(f"[0-9A-Z]+-{self.config.season}")
         hedge_pairs = {}
@@ -378,6 +352,7 @@ class MainProcess:
                         # build pipe connection, future, and sub process listener
                         conn1, conn2 = mp.Pipe(duplex=True)
                         self._connections[hedge_pair.coin] = (conn1, conn2)
+                        self._sub_process_notify_events[coin] = asyncio.Event()
                         sub_process_future = self._loop.run_in_executor(self._executor, run_sub_process, hedge_pair, self.config, conn2)
                         self._sub_process_futures[coin] = sub_process_future
                         self._sub_process_listen_tasks[coin] = asyncio.create_task(self._listen_sub_process_msg(coin))
