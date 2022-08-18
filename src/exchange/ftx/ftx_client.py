@@ -209,7 +209,6 @@ class FtxExchange:
             data['post_only'] = post_only
         if client_id:
             data['clientId'] = client_id
-        print(data)
         headers = self._gen_auth_header('POST', url, body=data)
         async with client.post(url, headers=headers, json=data) as res:
             res_json = await res.json()
