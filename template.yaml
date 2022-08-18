@@ -37,3 +37,8 @@ strategy:
   seconds_before_expiry_to_stop_open_position: 86400
   seconds_before_expiry_to_stop_close_position: 3900
   release_mode: False
+
+# whitelist can be ignored, default includes all markets
+whitelist:
+  - BTC
+  - ETH

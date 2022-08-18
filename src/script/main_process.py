@@ -224,7 +224,14 @@ class MainProcess:
                     spot=spot,
                     future=symbol
                 )
-        self.hedge_pairs.update(hedge_pairs)
+        if len(self.config.whitelist) == 0:
+            self.hedge_pairs.update(hedge_pairs)
+        else:
+            for coin in self.config.whitelist:
+                if hedge_pairs.get(coin):
+                    self.hedge_pairs[coin] = hedge_pairs[coin]
+                else:
+                    self.logger.warning(f"{coin} in whitelist is not found in the market")
 
         async with self._hedge_pair_initialized_cond:
             self._hedge_pair_initialized_cond.notify_all()

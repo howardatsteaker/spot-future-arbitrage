@@ -1,6 +1,7 @@
 from __future__ import annotations
 from enum import Enum, auto
 from decimal import Decimal
+from typing import List
 import yaml
 
 
@@ -45,7 +46,8 @@ class Config:
             leverage_limit: Decimal,
             seconds_before_expiry_to_stop_open_position: float,
             seconds_before_expiry_to_stop_close_position: float,
-            release_mode: bool):
+            release_mode: bool,
+            whitelist: List[str],):
         self.exchange=exchange
         self.api_key=api_key
         self.api_secret=api_secret
@@ -66,12 +68,17 @@ class Config:
         self.seconds_before_expiry_to_stop_open_position = seconds_before_expiry_to_stop_open_position
         self.seconds_before_expiry_to_stop_close_position = seconds_before_expiry_to_stop_close_position
         self.release_mode = release_mode
-
+        self.whitelist = whitelist
 
     @classmethod
     def from_yaml(cls, file_path: str) -> Config:
         with open(file_path, 'r') as f:
             data = yaml.load(f, yaml.SafeLoader)
+
+        if data.get('whitelist'):
+            whitelist: List[str] = data['whitelist']
+        else:
+            whitelist = []
 
         return Config(
             exchange=Exchange.from_str(data['exchange']['name']),
@@ -92,4 +99,5 @@ class Config:
             seconds_before_expiry_to_stop_open_position=data['strategy']['seconds_before_expiry_to_stop_open_position'],
             seconds_before_expiry_to_stop_close_position=data['strategy']['seconds_before_expiry_to_stop_close_position'],
             release_mode=data['strategy']['release_mode'],
+            whitelist=whitelist,
         )
