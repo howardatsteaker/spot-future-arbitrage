@@ -79,6 +79,7 @@ class SubProcess:
         self._last_indicator_update_ts: float = 0.0
 
         self.future_expiry_ts: float = None
+        self._future_expiry_ts_update_event = asyncio.Event()
 
         self._fund_manager_response_event: asyncio.Event = asyncio.Event()
         self._fund_manager_response_messages: Dict[uuid.UUID, FtxFundResponseMessage] = {}
@@ -245,6 +246,7 @@ class SubProcess:
     async def _init_update_future_expiry(self):
         result = await self.exchange.get_future(self.hedge_pair.future)
         self.future_expiry_ts = dateutil.parser.parse(result['expiry']).timestamp()
+        self._future_expiry_ts_update_event.set()
 
     def start_network(self):
         if self._consume_main_process_msg_task is None:
@@ -670,6 +672,7 @@ class SubProcess:
             # TODO: inform main process fund release
 
     async def open_position_loop(self):
+        await self._future_expiry_ts_update_event.wait()
         while self.future_expiry_ts - time.time() > self.config.seconds_before_expiry_to_stop_open_position:
             try:
                 await self.open_position()
@@ -679,6 +682,7 @@ class SubProcess:
                 await asyncio.sleep(5)
 
     async def close_position_loop(self):
+        await self._future_expiry_ts_update_event.wait()
         while self.future_expiry_ts - time.time()> self.config.seconds_before_expiry_to_stop_close_position:
             try:
                 await self.close_position()
