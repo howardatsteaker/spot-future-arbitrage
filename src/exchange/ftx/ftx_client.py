@@ -8,6 +8,7 @@ from decimal import Decimal
 import aiohttp
 import dateutil.parser
 from src.exchange.ftx.ftx_data_type import FtxCandleResolution, FtxOrderType, FtxTicker, Side
+from src.exchange.ftx.ftx_error import ExchangeError
 
 
 class FtxExchange:
@@ -217,12 +218,14 @@ class FtxExchange:
             if res_json['success']:
                 # TODO ftx response order id type is int, should cast to str
                 result = res_json['result']
-                self.logger().info(f"Ftx place order success: {result}")
+                if type == FtxOrderType.LIMIT:
+                    self.logger().info(f"Ftx place {market} {type.value} {side.value} order (p: {price}, s: {size}, id: {result['id']})")
+                else:
+                    self.logger().info(f"Ftx place {market} {type.value} {side.value} order (s: {size}, id: {result['id']})")
                 return result
             else:
-                self.logger().warning(f"Fail to place order. Response msg: {res_json}")
-                # TODO raise a proper exception
-                raise Exception
+                error_msg = res_json.get('error')
+                raise ExchangeError(error_msg)
     
     async def place_market_order(self, market: str, side: Side, size: Decimal) -> dict:
         res_json = await self.place_order(market, side, FtxOrderType.MARKET, size)
