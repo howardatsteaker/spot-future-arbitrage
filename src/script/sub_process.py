@@ -85,8 +85,8 @@ class SubProcess:
         self.future_expiry_ts: float = None
         self._future_expiry_ts_update_event = asyncio.Event()
 
-        self._fund_manager_response_event: asyncio.Event = asyncio.Event()
-        self._fund_manager_response_messages: Dict[uuid.UUID, FtxFundResponseMessage] = {}
+        self._fund_manager_response_events: Dict[uuid.UUID, asyncio.Event] = TTLCache(maxsize=1000, ttl=60)
+        self._fund_manager_response_messages: Dict[uuid.UUID, FtxFundResponseMessage] = TTLCache(maxsize=1000, ttl=60)
 
         self._ws_orders: Dict[str, FtxOrderMessage] = TTLCache(maxsize=1000, ttl=60)  # using order_id: str as the mapping key
         self._ws_orders_events: Dict[str, asyncio.Event] = TTLCache(maxsize=1000, ttl=60)  # using order_id: str as the mapping key
@@ -311,8 +311,10 @@ class SubProcess:
                 self.leverage_info = msg.leverage
                 self.logger.debug(f"{self.hedge_pair.coin} Receive leverage message: {msg.leverage}X")
             elif type(msg) is FtxFundResponseMessage:
-                self._fund_manager_response_event.set()
                 self._fund_manager_response_messages[msg.id] = msg
+                if not self._fund_manager_response_events.get(msg.id):
+                    self._fund_manager_response_events[msg.id] = asyncio.Event()
+                self._fund_manager_response_events[msg.id].set()
             elif type(msg) is FtxOrderMessage:
                 self.logger.debug(f"{self.hedge_pair.coin} Receive ws order message: {msg}")
                 order_id = msg.id
@@ -431,8 +433,10 @@ class SubProcess:
             self.conn.send(FtxFundRequestMessage(request_id, fund_needed, spot_notional_value))
 
             # await fund response
+            if not self._fund_manager_response_events.get(request_id):
+                self._fund_manager_response_events[request_id] = asyncio.Event()
             try:
-                await asyncio.wait_for(self._fund_manager_response_event.wait(), timeout=self.config.ticker_delay_threshold)
+                await asyncio.wait_for(self._fund_manager_response_events[request_id].wait(), timeout=self.config.ticker_delay_threshold)
             except asyncio.TimeoutError:
                 self.logger.warning(f"{self.hedge_pair.coin} request fund for open position timeout.")
                 return
