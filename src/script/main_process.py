@@ -425,7 +425,7 @@ class MainProcess:
                     type=FtxOrderType.LIMIT if data['type'] == 'limit' else FtxOrderType.MARKET,
                     side=Side.BUY if data['side'] == 'buy' else Side.SELL,
                     size=Decimal(str(data['size'])),
-                    price=Decimal(str(data['price'])),
+                    price=Decimal(str(data['price'])) if isinstance(data['price'], (float, int)) else data['price'],
                     status=FtxOrderStatus.str_entry(data['status']),
                     filled_size=Decimal(str(data['filledSize'])),
                     avg_fill_price=Decimal(str(data['avgFillPrice'])) if data['avgFillPrice'] else None,

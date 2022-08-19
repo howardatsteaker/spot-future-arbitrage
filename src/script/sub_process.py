@@ -457,10 +457,10 @@ class SubProcess:
             spot_order_result, future_order_result = await asyncio.gather(spot_place_order, future_place_order, return_exceptions=True)
             both_results_ok = True
             if isinstance(spot_order_result, Exception):
-                self.logger.error(f"Unexpected error while place {self.hedge_pair.spot} market order.", exc_info=True)
+                self.logger.error(f"Unexpected error while place {self.hedge_pair.spot} market order.")
                 both_results_ok = False
             if isinstance(future_order_result, Exception):
-                self.logger.error(f"Unexpected error while place {self.hedge_pair.future} market order.", exc_info=True)
+                self.logger.error(f"Unexpected error while place {self.hedge_pair.future} market order.")
                 both_results_ok = False
 
             if both_results_ok:
@@ -536,7 +536,7 @@ class SubProcess:
             type=FtxOrderType.LIMIT if data['type'] == 'limit' else FtxOrderType.MARKET,
             side=Side.BUY if data['side'] == 'buy' else Side.SELL,
             size=Decimal(str(data['size'])),
-            price=Decimal(str(data['price'])),
+            price=Decimal(str(data['price'])) if isinstance(data['price'], (float, int)) else data['price'],
             status=FtxOrderStatus.str_entry(data['status']),
             filled_size=Decimal(str(data['filledSize'])),
             avg_fill_price=Decimal(str(data['avgFillPrice'])) if data['avgFillPrice'] else None,
@@ -638,10 +638,10 @@ class SubProcess:
         spot_order_result, future_order_result = await asyncio.gather(spot_place_order, future_place_order, return_exceptions=True)
         both_results_ok = True
         if isinstance(spot_order_result, Exception):
-            self.logger.error(f"Unexpected error while place {self.hedge_pair.spot} market order.", exc_info=True)
+            self.logger.error(f"Unexpected error while place {self.hedge_pair.spot} market order.")
             both_results_ok = False
         if isinstance(future_order_result, Exception):
-            self.logger.error(f"Unexpected error while place {self.hedge_pair.future} market order.", exc_info=True)
+            self.logger.error(f"Unexpected error while place {self.hedge_pair.future} market order.")
             both_results_ok = False
 
         if both_results_ok:
