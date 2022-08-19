@@ -333,7 +333,7 @@ class SubProcess:
                     up = self.indicator.upper_threshold
                     low = self.indicator.lower_threshold
                     self._last_indicator_update_ts = time.time()
-                    self.logger.info(f"Indicator is updated successfully. UP: {up}, LOW: {low}")
+                    self.logger.info(f"{self.hedge_pair.coin} Indicator is updated successfully. UP: {up}, LOW: {low}")
                 curr_tick = now_ts // self.INDICATOR_UPDATE_INTERVAL * self.INDICATOR_UPDATE_INTERVAL
                 curr_tick_with_shift = curr_tick + self.INDICATOR_UPDATE_TIME_SHIFT
                 if curr_tick_with_shift > now_ts:
