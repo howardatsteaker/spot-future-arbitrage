@@ -16,5 +16,6 @@ async def main():
 
 
 if __name__ == "__main__":
-    uvloop.install()
-    asyncio.run(main())
+    asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(main())
