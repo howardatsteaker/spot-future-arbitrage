@@ -11,7 +11,11 @@ import uuid
 import uvloop
 import dateutil.parser
 from cachetools import TTLCache
-from ..exchange.ftx.ftx_error import ExchangeError
+
+from src.indicator.base_indicator import BaseIndicator
+from src.indicator.bollinger import Bollinger
+from src.indicator.macd import MACD
+from src.exchange.ftx.ftx_error import ExchangeError
 from src.common import Config
 from src.exchange.ftx.ftx_client import FtxExchange
 from src.exchange.ftx.ftx_data_type import (
@@ -33,7 +37,6 @@ from src.exchange.ftx.ftx_data_type import (
     FtxTradingRule,
     FtxTradingRuleMessage,
     Side)
-from src.indicator.macd import MACD
 
 
 @dataclass
@@ -240,7 +243,7 @@ class SubProcess:
                     cum_size -= fill['size']
             return entry_price
 
-    def _init_get_indicator(self):
+    def _init_get_indicator(self) -> BaseIndicator:
         if self.config.indicator['name'] == 'macd':
             params = self.config.indicator['params']
             return MACD(
@@ -250,6 +253,12 @@ class SubProcess:
                 signal_length=params['signal_length'],
                 std_length=params['std_length'],
                 std_mult=params['std_mult'])
+        elif self.config.indicator['name'] == 'bollinger':
+            params = self.config.indicator['params']
+            return Bollinger(
+                self.hedge_pair,
+                length = params['length'],
+                std_mult=params['std_mult'],)
         else:
             raise NotImplementedError(f"Sorry, {self.config.indicator['name']} is not implemented")
 
