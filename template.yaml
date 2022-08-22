@@ -17,6 +17,7 @@ log:
   to_file: true
   file_path: 'log/stategy.log'
 
+# for more information, see src/indicator/*.py
 indicator:
   name: 'macd'
   params:
@@ -27,18 +28,18 @@ indicator:
     std_mult: 1.0
 
 strategy:
-  ticker_delay_threshold: 0.2  # seconds
-  apr_to_open_position: 0.2
+  ticker_delay_threshold: 0.2  # in seconds. If ticker is delayed, stratgy will return and wait the next round.
+  apr_to_open_position: 0.2  # if APR is above this number, no matter what other signals says, strategy will open new position
   min_order_size_mode: False
   open_order_size_multiplier: 0.1
   close_order_size_multiplier: 0.2
   max_leverage: 3
-  leverage_limit: 2.95  # if account leverage is above this upper limit, openning new position is prohibited
-  seconds_before_expiry_to_stop_open_position: 86400
-  seconds_before_expiry_to_stop_close_position: 3900
-  release_mode: False
+  leverage_limit: 2.95  # if account leverage is above this upper limit, openning new position is not allowed.
+  seconds_before_expiry_to_stop_open_position: 86400  # when the time is close enough to the expiry, open position is not allowed.
+  seconds_before_expiry_to_stop_close_position: 3900  # when the time is close enough to the expiry, close position is not allowed.
+  release_mode: False  # if True, one can only close position. Openning new position is not allowed.
 
-# whitelist can be ignored, default includes all markets
+# the 'whitelist' key can be deleted, default includes all markets 
 whitelist:
   - BTC
   - ETH
