@@ -5,9 +5,22 @@ import pandas as pd
 import dateutil.parser
 from src.exchange.ftx.ftx_client import FtxExchange
 from src.exchange.ftx.ftx_data_type import FtxCandleResolution, FtxHedgePair
+from src.indicator.base_indicator import BaseIndicator
 
 
-class MACD:
+class MACD(BaseIndicator):
+    """To use MACD indicator, one should set parameters in the yaml config file.
+    For example:
+    
+    indicator:
+        name: 'macd'
+        params:
+            fast_length: 12
+            slow_length: 26
+            signal_length: 9
+            std_length: 20
+            std_mult: 1.0
+    """
 
     def __init__(
         self,
@@ -19,8 +32,8 @@ class MACD:
         std_mult: float = 1.0,
         ):
 
-        self.upper_threshold: Decimal = None
-        self.lower_threshold: Decimal = None
+        self._upper_threshold: Decimal = None
+        self._lower_threshold: Decimal = None
         self.last_update_timestamp: float = 0.0
 
         self.hedge_pair = hedge_pair
@@ -33,6 +46,14 @@ class MACD:
         self.alpha_fast = 2 / (fast_length + 1)
         self.alpha_slow = 2 / (slow_length + 1)
         self.alpha_macd = 2 / (signal_length + 1)
+
+    @property
+    def upper_threshold(self) -> Decimal:
+        return self._upper_threshold
+
+    @property
+    def lower_threshold(self) -> Decimal:
+        return self._lower_threshold
 
     async def update_indicator_info(self):
         client = FtxExchange('', '')
@@ -70,8 +91,8 @@ class MACD:
         upper_threshold = ((self.std_mult * std) / (1 - self.alpha_macd) + last_macd - ((1 - self.alpha_fast) * last_fast - (1 - self.alpha_slow) * last_slow)) / (self.alpha_fast - self.alpha_slow)
         lower_threshold = ((-self.std_mult * std) / (1 - self.alpha_macd) + last_macd - ((1 - self.alpha_fast) * last_fast - (1 - self.alpha_slow) * last_slow)) / (self.alpha_fast - self.alpha_slow)
 
-        self.upper_threshold = Decimal(str(upper_threshold))
-        self.lower_threshold = Decimal(str(lower_threshold))
+        self._upper_threshold = Decimal(str(upper_threshold))
+        self._lower_threshold = Decimal(str(lower_threshold))
         self.last_update_timestamp = concat_df.index[-1].timestamp()
 
     def candles_to_df(self, candles: List[dict]) -> pd.DataFrame:
