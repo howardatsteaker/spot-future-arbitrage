@@ -396,9 +396,10 @@ class SubProcess:
             future_price = future_ticker.bid
             spot_price = spot_ticker.ask
             basis = future_price - spot_price
-            collateral = future_price / self.leverage_info.max_leverage - spot_price * self.collateral_weight.weight
+            future_collateral_needed = future_price / self.leverage_info.max_leverage
+            spot_collateral_supplied =  spot_price * self.collateral_weight.weight
             fee = (spot_price + future_price) * self.fee_rate.taker_fee_rate
-            cost = spot_price + collateral + fee
+            cost = spot_price + future_collateral_needed - spot_collateral_supplied + fee
             profit = basis - 2 * fee
 
             if profit < 0:
@@ -485,10 +486,11 @@ class SubProcess:
                     else:
                         # log open pnl rate, apr
                         real_basis = future_order_msg.avg_fill_price - spot_order_msg.avg_fill_price
-                        real_profit = real_basis - 2 * self.fee_rate.taker_fee_rate
-                        real_collateral = future_order_msg.avg_fill_price / self.leverage_info.max_leverage - spot_order_msg.avg_fill_price * self.collateral_weight.weight
+                        real_future_collateral_needed = future_order_msg.avg_fill_price / self.leverage_info.max_leverage
+                        real_spot_collateral_supplied =  spot_order_msg.avg_fill_price * self.collateral_weight.weight
                         real_fee = (future_order_msg.avg_fill_price + spot_order_msg.avg_fill_price) * self.fee_rate.taker_fee_rate
-                        real_cost = spot_order_msg.avg_fill_price + real_collateral + real_fee
+                        real_profit = real_basis - 2 * real_fee
+                        real_cost = spot_order_msg.avg_fill_price + real_future_collateral_needed - real_spot_collateral_supplied + real_fee
                         real_pnl_rate = real_profit / real_cost
                         real_apr = real_pnl_rate * Decimal('365') / days_to_expiry
                         self.logger.info(f"{self.hedge_pair.future} Open APR: {apr:.2%}, Basis: {basis}, Indicator up: {self.indicator.upper_threshold}, size: {min(spot_size, future_size)}, filled APR: {real_apr:.2%}, Basis: {real_basis}, size: {spot_order_msg.filled_size}")
@@ -682,8 +684,9 @@ class SubProcess:
                     self.logger.warning(f"Filled size is not matched, {spot_order_msg.market}: {spot_order_msg.filled_size}, {future_order_msg.market}: {future_order_msg.filled_size}")
                 else:
                     # log close pnl rate, apr
-                    collateral = self.future_entry_price / self.leverage_info.max_leverage - self.spot_entry_price * self.collateral_weight.weight
-                    cost = self.spot_entry_price + collateral + open_fee
+                    future_collateral_needed = self.future_entry_price / self.leverage_info.max_leverage
+                    spot_collateral_supplied = self.spot_entry_price * self.collateral_weight.weight
+                    cost = self.spot_entry_price + future_collateral_needed - spot_collateral_supplied + open_fee
                     pnl_rate = profit / cost
                     days_to_expiry = Decimal(str(self.future_expiry_ts - time.time() / 86400))
                     apr = pnl_rate * Decimal('365') / days_to_expiry
