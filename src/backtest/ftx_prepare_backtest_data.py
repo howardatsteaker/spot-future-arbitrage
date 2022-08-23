@@ -9,7 +9,7 @@ def save_kline_from_trades(data_dir: str, symbol: str, start_ts: int, end_ts: in
     data_loader = DataLoader(data_dir)
     trades_df = data_loader.get_trades_df(start_ts, end_ts)
     klines_df = data_loader.trades_df_2_klines(trades_df, resolution=resolution)
-    filename = os.path.join(save_dir, symbol_path_name, f"{start}_{end}_{resolution}.parquet")
+    filename = os.path.join(save_dir, symbol_path_name, f"{start_ts}_{end_ts}_{resolution}.parquet")
     if not os.path.exists(filename):
         pathlib.Path(filename).parent.mkdir(parents=True, exist_ok=True)
         klines_df.to_parquet(filename)
@@ -18,7 +18,7 @@ def save_kline_from_trades(data_dir: str, symbol: str, start_ts: int, end_ts: in
 def save_merged_trades(future: str, future_dir: str, spot_dir: str, start_ts: int, end_ts: int, save_path: str = 'local/merged_trades'):
     future_path_name = future.replace('-', '_')
     save_path = os.path.join(save_path, future_path_name)
-    filename = os.path.join(save_path, f"{start}_{end}.parquet")
+    filename = os.path.join(save_path, f"{start_ts}_{end_ts}.parquet")
     if not os.path.exists(save_path):
         pathlib.Path(save_path).mkdir(parents=True, exist_ok=True)
     if not os.path.exists(filename):
@@ -39,7 +39,7 @@ def save_merged_trades(future: str, future_dir: str, spot_dir: str, start_ts: in
 
 def save_merged_kline(future: str, future_dir: str, spot_dir: str, start_ts: int, end_ts: int, resolution: str = '1H', save_path: str = 'local/merged_kline'):
     future_path_name = future.replace('-', '_')
-    filename = os.path.join(save_path, future_path_name, f"{start}_{end}.parquet")
+    filename = os.path.join(save_path, future_path_name, f"{start_ts}_{end_ts}.parquet")
     path = pathlib.Path(filename)
     if not path.parent.exists():
         path.parent.mkdir(parents=True, exist_ok=True)
