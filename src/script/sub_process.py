@@ -731,6 +731,9 @@ class SubProcess:
                 self.future_position_size = future_new_size
 
     async def open_position_loop(self):
+        if self.hedge_pair.coin in self.config.blacklist:
+            self.logger.info(f"Detect {self.hedge_pair.coin} in the blacklist, which is not allowed to open position. Return")
+            return
         await self._future_expiry_ts_update_event.wait()
         while self.future_expiry_ts - time.time() > self.config.seconds_before_expiry_to_stop_open_position:
             try:

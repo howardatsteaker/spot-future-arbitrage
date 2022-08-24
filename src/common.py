@@ -47,7 +47,8 @@ class Config:
             seconds_before_expiry_to_stop_open_position: float,
             seconds_before_expiry_to_stop_close_position: float,
             release_mode: bool,
-            whitelist: List[str],):
+            whitelist: List[str],
+            blacklist: List[str],):
         self.exchange=exchange
         self.api_key=api_key
         self.api_secret=api_secret
@@ -69,6 +70,7 @@ class Config:
         self.seconds_before_expiry_to_stop_close_position = seconds_before_expiry_to_stop_close_position
         self.release_mode = release_mode
         self.whitelist = whitelist
+        self.blacklist = blacklist
 
     @classmethod
     def from_yaml(cls, file_path: str) -> Config:
@@ -80,6 +82,10 @@ class Config:
         else:
             whitelist = []
 
+        if data.get('blacklist'):
+            blacklist: List[str] = data['blacklist']
+        else:
+            blacklist = []
         return Config(
             exchange=Exchange.from_str(data['exchange']['name']),
             api_key=data['exchange']['api_key'],
@@ -100,4 +106,5 @@ class Config:
             seconds_before_expiry_to_stop_close_position=data['strategy']['seconds_before_expiry_to_stop_close_position'],
             release_mode=data['strategy']['release_mode'],
             whitelist=whitelist,
+            blacklist=blacklist,
         )

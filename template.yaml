@@ -43,3 +43,7 @@ strategy:
 whitelist:
   - BTC
   - ETH
+
+# the 'blacklist' key can be deleted or empty
+blacklist:
+  - AMC
