@@ -1,5 +1,7 @@
 import time
 import datetime
+from decimal import Decimal
+from dataclasses import asdict
 
 from .ftx_trades_downloader import run_trades_data_download_process
 from .ftx_prepare_backtest_data import (
@@ -8,12 +10,13 @@ from .ftx_prepare_backtest_data import (
     save_merged_kline
 )
 from .backtest_bollinger import run_backtest
-
 from ..exchange.ftx.ftx_data_type import FtxHedgePair
+from .ftx_data_types import BackTestConfig
 
 def main():
     start_time = "2022/08/01"
     end_time = "2022/08/22"
+    expiration_time = "2022/09/30"
     trades_dir = "trades/"
     save_dir = "local/"
     resolution = '1H'
@@ -26,6 +29,16 @@ def main():
 
     start_timestamp = int(time.mktime(datetime.datetime.strptime(start_time, "%Y/%m/%d").timetuple()))
     end_timestamp = int(time.mktime(datetime.datetime.strptime(end_time, "%Y/%m/%d").timetuple()))
+    expiration_timestamp = int(time.mktime(datetime.datetime.strptime(expiration_time, "%Y/%m/%d").timetuple()))
+
+    config: BackTestConfig = BackTestConfig(
+        fee_rate=Decimal('0.000228'),
+        collateral_weight=Decimal('0.975'),
+        ts_to_stop_open=expiration_timestamp - 86400,
+        ts_to_expiry=expiration_timestamp,
+        expiration_price=Decimal('21141.1'),
+        leverage=Decimal('3'),
+    )
 
     print(f'download {hedge_pair.spot} trades in {trades_dir}')
     run_trades_data_download_process(hedge_pair.spot, start_timestamp, end_timestamp, trades_dir)
@@ -81,7 +94,7 @@ def main():
         '/' + str(start_timestamp) + '_' + str(end_timestamp) + '_' + str(resolution) + '.parquet'
 
     print('running backtest...')
-    run_backtest(trades_path, spot_klines_path, future_klines_path)
+    run_backtest(trades_path, spot_klines_path, future_klines_path, config=asdict(config))
 
 if __name__ == '__main__':
     main()

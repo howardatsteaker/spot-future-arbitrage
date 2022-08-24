@@ -3,13 +3,14 @@ from decimal import Decimal
 import pathlib
 import numpy as np
 import pandas as pd
-from src.backtest.ftx_data_types import HedgeType, MarketOrder, Side, BaseState
+from src.backtest.ftx_data_types import HedgeType, MarketOrder, Side, BaseState, BackTestConfig
 from src.backtest import backtest_util
 
 def run_backtest(
     trades_path: str,
     spot_klines_path: str,
-    future_klines_path: str
+    future_klines_path: str,
+    config: BackTestConfig
 ):
     trades = pd.read_parquet(trades_path)
     spot_klines = pd.read_parquet(spot_klines_path)
@@ -21,17 +22,10 @@ def run_backtest(
         summary_path = save_path / "summary.json"
         if summary_path.exists():
             continue
-        # config
-        config = {
-            'fee_rate': Decimal('0.000228'),
-            'collateral_weight': Decimal('0.975'),
-            'ts_to_stop_open': 1655953200,  # 2022-6-23 03:00:00 UTC
-            'ts_to_expiry': 1656039600,  # 2022-6-24 03:00:00 UTC
-            'expiration_price': Decimal('21141.1'),
-            'leverage': Decimal('3'),
-            'bollinger_band_length': 20,
-            'bollinger_band_mult': boll_mult,
-        }
+
+        #TODO make it into indicator config
+        config['bollinger_band_length'] = 20
+        config['bollinger_band_mult'] = boll_mult
 
         # merge klines
         spot_close = spot_klines['close'].rename('s_close')
@@ -140,4 +134,12 @@ if __name__ == '__main__':
     trades_path = "local/merged_trades/BTC_0930/1660862041_1661237267.parquet"
     spot_klines_path = "local/kline/BTC_USD/1660862041_1661237267_1H.parquet"
     future_klines_path = "local/kline/BTC_0930/1660862041_1661237267_1H.parquet"
-    run_backtest(trades_path, spot_klines_path, future_klines_path)
+    config = {
+        'fee_rate': Decimal('0.000228'),
+        'collateral_weight': Decimal('0.975'),
+        'ts_to_stop_open': 1759283200,  # 2022-6-23 03:00:00 UTC
+        'ts_to_expiry': 1759283200,  # 2022-6-24 03:00:00 UTC
+        'expiration_price': Decimal('21141.1'),
+        'leverage': Decimal('3'),
+    }
+    run_backtest(trades_path, spot_klines_path, future_klines_path, config=config)
