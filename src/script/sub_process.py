@@ -588,13 +588,13 @@ class SubProcess:
         max_order_size = fund_supply / cost
         return max_order_size // self.combined_trading_rule.min_order_size * self.combined_trading_rule.min_order_size
 
-    async def _place_market_order_with_retry(self, market: str, side: Side, size: Decimal, attempts: int = 3, sleep: float = 0.2):
+    async def _place_market_order_with_retry(self, market: str, side: Side, size: Decimal, reduce_only: bool = False, attempts: int = 3, sleep: float = 0.2):
         attempt = 0
         ret_error = None
         while attempt < attempts:
             attempt += 1
             try:
-                ret = await self.exchange.place_market_order(market, side, size)
+                ret = await self.exchange.place_market_order(market, side, size, reduce_only=reduce_only)
             except RateLimitExceeded as error:
                 self.logger.warning(f"Fail to place {market} market {side.value} order with size: {size}, attempt: {attempt}")
                 if attempt == attempts:
@@ -671,8 +671,8 @@ class SubProcess:
             return
 
         # place order
-        spot_place_order = self._place_market_order_with_retry(self.hedge_pair.spot, Side.SELL, order_size)
-        future_place_order = self._place_market_order_with_retry(self.hedge_pair.future, Side.BUY, order_size)
+        spot_place_order = self._place_market_order_with_retry(self.hedge_pair.spot, Side.SELL, order_size, reduce_only=True)
+        future_place_order = self._place_market_order_with_retry(self.hedge_pair.future, Side.BUY, order_size, reduce_only=True)
         spot_order_result, future_order_result = await asyncio.gather(spot_place_order, future_place_order, return_exceptions=True)
         both_results_ok = True
         if isinstance(spot_order_result, Exception):
