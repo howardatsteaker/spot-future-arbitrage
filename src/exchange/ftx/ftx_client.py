@@ -8,7 +8,7 @@ from decimal import Decimal
 import aiohttp
 import dateutil.parser
 from src.exchange.ftx.ftx_data_type import FtxCandleResolution, FtxOrderType, FtxTicker, Side
-from src.exchange.ftx.ftx_error import ExchangeError
+from src.exchange.ftx.ftx_error import ExchangeError, ftx_throw_exception
 
 
 class FtxExchange:
@@ -212,20 +212,20 @@ class FtxExchange:
                 return result
             else:
                 error_msg = res_json.get('error')
-                raise ExchangeError(error_msg)
+                ftx_throw_exception(error_msg)
     
-    async def place_market_order(self, market: str, side: Side, size: Decimal) -> dict:
-        res_json = await self.place_order(market, side, FtxOrderType.MARKET, size)
+    async def place_market_order(self, market: str, side: Side, size: Decimal, reduce_only: bool = False) -> dict:
+        res_json = await self.place_order(market, side, FtxOrderType.MARKET, size, reduce_only=reduce_only)
         return res_json
 
-    async def place_ioc_order(self, market: str, side: Side, size: Decimal, price: Decimal) -> dict:
-        res_json = await self.place_order(market, side, FtxOrderType.LIMIT, size, price, ioc=True)
+    async def place_ioc_order(self, market: str, side: Side, size: Decimal, price: Decimal, reduce_only: bool = False) -> dict:
+        res_json = await self.place_order(market, side, FtxOrderType.LIMIT, size, price, ioc=True, reduce_only=reduce_only)
         return res_json
 
     async def place_limit_order(
         self, market: str, side: Side, size: Decimal,
-        price: Decimal, post_only: bool = False) -> dict:
-        res_json = await self.place_order(market, side, FtxOrderType.LIMIT, size, price, post_only=post_only)
+        price: Decimal, post_only: bool = False, reduce_only: bool = False) -> dict:
+        res_json = await self.place_order(market, side, FtxOrderType.LIMIT, size, price, post_only=post_only, reduce_only=reduce_only)
         return res_json
 
     def quantize_order_size(self, size: Decimal, size_tick: Decimal) -> Decimal:
