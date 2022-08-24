@@ -15,7 +15,7 @@ from cachetools import TTLCache
 from src.indicator.base_indicator import BaseIndicator
 from src.indicator.bollinger import Bollinger
 from src.indicator.macd import MACD
-from src.exchange.ftx.ftx_error import ExchangeError
+from src.exchange.ftx.ftx_error import ExchangeError, RateLimitExceeded
 from src.common import Config
 from src.exchange.ftx.ftx_client import FtxExchange
 from src.exchange.ftx.ftx_data_type import (
@@ -595,12 +595,16 @@ class SubProcess:
             attempt += 1
             try:
                 ret = await self.exchange.place_market_order(market, side, size)
-            except ExchangeError as error:
+            except RateLimitExceeded as error:
                 self.logger.warning(f"Fail to place {market} market {side.value} order with size: {size}, attempt: {attempt}")
                 if attempt == attempts:
                     ret_error = error
                     break
                 await asyncio.sleep(sleep)
+            except ExchangeError as error:
+                self.logger.error(f"Fail to place {market} market {side.value} order with size: {size}, error: {error}")
+                ret_error = error
+                break
             else:
                 return ret
         raise ret_error
