@@ -31,6 +31,6 @@ ftx_error_message_map = {
 
 def ftx_throw_exception(message: str) -> ExchangeError:
     for key in ftx_error_message_map:
-        if message in key:
+        if key in message:
             raise ftx_error_message_map[key](message)
     raise ExchangeError(message)
