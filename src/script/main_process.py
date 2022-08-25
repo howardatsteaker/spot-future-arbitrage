@@ -7,7 +7,7 @@ import time
 from concurrent.futures import Future, ProcessPoolExecutor
 from decimal import Decimal
 from multiprocessing.connection import Connection
-from typing import Dict, Tuple
+from typing import Dict, List, Tuple
 
 import dateutil.parser
 
@@ -25,7 +25,8 @@ from src.exchange.ftx.ftx_data_type import (Ftx_EWMA_InterestRate,
                                             FtxLeverageMessage,
                                             FtxOrderMessage, FtxOrderStatus,
                                             FtxOrderType, FtxTradingRule,
-                                            FtxTradingRuleMessage, Side)
+                                            FtxTradingRuleMessage, Side,
+                                            TradeType)
 from src.script.fund_manager import FundManager
 from src.script.sub_process import run_sub_process
 
@@ -239,8 +240,9 @@ class MainProcess:
                 and FtxHedgePair.future_to_spot(symbol) in symbol_set
             ):
                 coin = FtxHedgePair.future_to_coin(symbol)
-                spot = FtxHedgePair.coin_to_spot(coin)
-                hedge_pairs[coin] = FtxHedgePair(coin=coin, spot=spot, future=symbol)
+                hedge_pairs[coin] = FtxHedgePair.from_future(symbol)
+
+        # handle whitelist
         if len(self.config.whitelist) == 0:
             self.hedge_pairs.update(hedge_pairs)
         else:
@@ -251,9 +253,46 @@ class MainProcess:
                     self.logger.warning(
                         f"{coin} in whitelist is not found in the market"
                     )
+            # hedge pairs that have position but not in whitelist should be set to close only mode
+            coins_that_have_position = await self._get_coins_that_have_position(
+                symbol_set
+            )
+            for coin in coins_that_have_position:
+                if coin not in self.config.whitelist:
+                    self.hedge_pairs[coin] = FtxHedgePair.from_coin(
+                        coin, self.config.season, TradeType.CLOSE_ONLY
+                    )
+
+        # handle blacklist
+        for coin in self.config.blacklist:
+            if self.hedge_pairs.get(coin):
+                self.hedge_pairs[coin].trade_type = TradeType.CLOSE_ONLY
 
         async with self._hedge_pair_initialized_cond:
             self._hedge_pair_initialized_cond.notify_all()
+
+    async def _get_coins_that_have_position(self, symbol_set: set) -> List[str]:
+        await self._trading_rules_ready_event.wait()
+        balances = await self.exchange.get_balances()
+        balance_map = {
+            b["coin"]: Decimal(str(b["total"]))
+            for b in balances
+            if FtxHedgePair.coin_to_spot(b["coin"]) in symbol_set
+        }
+        positions = await self.exchange.get_positions()
+        coins = []
+        for position in positions:
+            future = position["future"]
+            coin = FtxHedgePair.future_to_coin(future)
+            future_new_size = Decimal(str(position["netSize"]))
+            if future_new_size > -self.trading_rules[future].min_order_size:
+                continue
+            if (
+                balance_map.get(coin, Decimal(0))
+                >= self.trading_rules[future].min_order_size
+            ):
+                coins.append(coin)
+        return coins
 
     async def _interest_rate_polling_loop(self):
         while True:

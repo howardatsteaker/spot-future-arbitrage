@@ -992,9 +992,9 @@ class SubProcess:
                 self.future_position_size = future_new_size
 
     async def open_position_loop(self):
-        if self.hedge_pair.coin in self.config.blacklist:
+        if not self.hedge_pair.can_open:
             self.logger.info(
-                f"Detect {self.hedge_pair.coin} in the blacklist, which is not allowed to open position. Return"
+                f"Detect {self.hedge_pair.coin} trade type is {self.hedge_pair.trade_type}, which is not allowed to open position. Return"
             )
             return
         if self.config.release_mode:
@@ -1016,6 +1016,11 @@ class SubProcess:
                 await asyncio.sleep(5)
 
     async def close_position_loop(self):
+        if not self.hedge_pair.can_close:
+            self.logger.info(
+                f"Detect {self.hedge_pair.coin} trade type is {self.hedge_pair.trade_type}, which is not allow to close position. Return"
+            )
+            return
         await self._future_expiry_ts_update_event.wait()
         while (
             self.future_expiry_ts - time.time()
