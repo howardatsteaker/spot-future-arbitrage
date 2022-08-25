@@ -38,7 +38,7 @@ class BaseIndicator:
             and now_ts < self._last_kline_start_timestamp + 2 * self._kline_resolution
         )
 
-    async def update_indicator_info(self, merged_candles):
+    async def update_indicator_info(self):
         """Indicators which inherit from this base class must implement this function
         to update upper_threshold, lower_threshold, last_kline_start_timestamp"""
         raise NotImplementedError
