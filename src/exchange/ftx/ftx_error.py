@@ -18,11 +18,11 @@ class InvalidOrder(ExchangeError):
 
 
 ftx_error_message_map = {
-    'Not enough balances': InsufficientFunds,
-    'Account does not have enough margin for order': InsufficientFunds,
-    'Please slow down': RateLimitExceeded,
-    'Do not send more than': RateLimitExceeded,
-    'Invalid reduce-only order': InvalidOrder,
+    "Not enough balances": InsufficientFunds,
+    "Account does not have enough margin for order": InsufficientFunds,
+    "Please slow down": RateLimitExceeded,
+    "Do not send more than": RateLimitExceeded,
+    "Invalid reduce-only order": InvalidOrder,
 }
 
 

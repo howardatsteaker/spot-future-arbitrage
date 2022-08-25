@@ -1,13 +1,16 @@
 import asyncio
+import hmac
 import logging
 import time
-import hmac
-from requests import Request
-from typing import List, Dict
 from decimal import Decimal
+from typing import Dict, List
+
 import aiohttp
 import dateutil.parser
-from src.exchange.ftx.ftx_data_type import FtxCandleResolution, FtxOrderType, FtxTicker, Side
+from requests import Request
+
+from src.exchange.ftx.ftx_data_type import (FtxCandleResolution, FtxOrderType,
+                                            FtxTicker, Side)
 from src.exchange.ftx.ftx_error import ExchangeError, ftx_throw_exception
 
 
@@ -23,7 +26,9 @@ class FtxExchange:
             self._logger = logging.getLogger(__name__)
         return self._logger
 
-    def __init__(self, api_key: str, api_secret: str, subaccount_name: str = None) -> None:
+    def __init__(
+        self, api_key: str, api_secret: str, subaccount_name: str = None
+    ) -> None:
         self._api_key = api_key
         self._api_secret = api_secret
         self._subaccount_name = subaccount_name
@@ -51,21 +56,19 @@ class FtxExchange:
             request = Request(http_method, url, json=body)
             prepared = request.prepare()
             ts = int(time.time() * 1000)
-            content_to_sign = f'{ts}{prepared.method}{prepared.path_url}'.encode()
+            content_to_sign = f"{ts}{prepared.method}{prepared.path_url}".encode()
             content_to_sign += prepared.body
         else:
             request = Request(http_method, url)
             prepared = request.prepare()
             ts = int(time.time() * 1000)
-            content_to_sign = f'{ts}{prepared.method}{prepared.path_url}'.encode()
+            content_to_sign = f"{ts}{prepared.method}{prepared.path_url}".encode()
 
-        signature = hmac.new(self._api_secret.encode(), content_to_sign, 'sha256').hexdigest()
+        signature = hmac.new(
+            self._api_secret.encode(), content_to_sign, "sha256"
+        ).hexdigest()
 
-        headers = {
-            "FTX-KEY": self._api_key,
-            "FTX-SIGN": signature,
-            "FTX-TS": str(ts)
-        }
+        headers = {"FTX-KEY": self._api_key, "FTX-SIGN": signature, "FTX-TS": str(ts)}
         if self._subaccount_name is not None and self._subaccount_name != "":
             headers["FTX-SUBACCOUNT"] = self._subaccount_name
 
@@ -76,9 +79,15 @@ class FtxExchange:
         url = self.REST_URL + "/markets"
         async with client.get(url) as res:
             json_res = await res.json()
-        return json_res['result']
+        return json_res["result"]
 
-    async def get_candles(self, symbol: str, resolution: FtxCandleResolution, start_time: int, end_time: int) -> List[dict]:
+    async def get_candles(
+        self,
+        symbol: str,
+        resolution: FtxCandleResolution,
+        start_time: int,
+        end_time: int,
+    ) -> List[dict]:
         if start_time is None:
             start_time = 0
         if end_time is None:
@@ -87,93 +96,121 @@ class FtxExchange:
         all_candles = []
         client = self._get_rest_client()
         while True:
-            url = self.REST_URL + f"/markets/{symbol}/candles?resolution={resolution.value}&start_time={start_time}&end_time={end_time}"
+            url = (
+                self.REST_URL
+                + f"/markets/{symbol}/candles?resolution={resolution.value}&start_time={start_time}&end_time={end_time}"
+            )
             async with client.get(url) as res:
                 res_json = await res.json()
-                candles = res_json['result']
+                candles = res_json["result"]
             if len(candles) == 0:
                 break
-            dedupted_candles = [c for c in candles if c['startTime'] not in time_set]
+            dedupted_candles = [c for c in candles if c["startTime"] not in time_set]
             if len(dedupted_candles) == 0:
                 break
             all_candles.extend(dedupted_candles)
-            time_set |= {c['startTime'] for c in dedupted_candles}
-            end_time = min([dateutil.parser.parse(c['startTime']) for c in candles]).timestamp() - 1
+            time_set |= {c["startTime"] for c in dedupted_candles}
+            end_time = (
+                min(
+                    [dateutil.parser.parse(c["startTime"]) for c in candles]
+                ).timestamp()
+                - 1
+            )
             if end_time < start_time:
                 break
-        return sorted(all_candles, key=lambda x: dateutil.parser.parse(x['startTime']))
+        return sorted(all_candles, key=lambda x: dateutil.parser.parse(x["startTime"]))
 
     async def get_fills(self, symbol: str, start_time: float, end_time: float):
         client = self._get_rest_client()
         all_fills = []
         id_set = set()
         while True:
-            url = self.REST_URL + f"/fills?market={symbol}&start_time={start_time}&end_time={end_time}"
-            headers = self._gen_auth_header('GET', url)
+            url = (
+                self.REST_URL
+                + f"/fills?market={symbol}&start_time={start_time}&end_time={end_time}"
+            )
+            headers = self._gen_auth_header("GET", url)
             async with client.get(url, headers=headers) as res:
                 json_res = await res.json()
-            fills = json_res['result']
+            fills = json_res["result"]
             if len(fills) == 0:
                 break
-            all_fills.extend([fill for fill in fills if fill['id'] not in id_set])
-            id_set |= set([fill['id'] for fill in fills])
-            end_time = min([dateutil.parser.parse(fill['time']).timestamp() for fill in fills]) - 0.000001
+            all_fills.extend([fill for fill in fills if fill["id"] not in id_set])
+            id_set |= set([fill["id"] for fill in fills])
+            end_time = (
+                min([dateutil.parser.parse(fill["time"]).timestamp() for fill in fills])
+                - 0.000001
+            )
 
-        return sorted(all_fills, key=lambda fill: dateutil.parser.parse(fill['time']))
+        return sorted(all_fills, key=lambda fill: dateutil.parser.parse(fill["time"]))
 
     async def get_account(self) -> dict:
         client = self._get_rest_client()
         url = self.REST_URL + "/account"
-        headers = self._gen_auth_header('GET', url)
+        headers = self._gen_auth_header("GET", url)
         async with client.get(url, headers=headers) as res:
             json_res = await res.json()
-        return json_res['result']
+        return json_res["result"]
 
     async def set_leverage(self, leverage: int):
         client = self._get_rest_client()
         url = self.REST_URL + "/account/leverage"
-        data = {'leverage': leverage}
-        headers = self._gen_auth_header('POST', url, body=data)
+        data = {"leverage": leverage}
+        headers = self._gen_auth_header("POST", url, body=data)
         async with client.post(url, headers=headers, json=data) as res:
             json_res = await res.json()
-            assert json_res['success'], "ftx set_leverage was not success"
+            assert json_res["success"], "ftx set_leverage was not success"
 
-    async def get_spot_margin_history(self, start_time: float = None, end_time: float = None) -> List[dict]:
+    async def get_spot_margin_history(
+        self, start_time: float = None, end_time: float = None
+    ) -> List[dict]:
         client = self._get_rest_client()
         url = self.REST_URL + "/spot_margin/history"
         data = {}
         if start_time:
-            data['start_time'] = start_time
+            data["start_time"] = start_time
         if end_time:
-            data['end_time'] = end_time
-        headers = self._gen_auth_header('GET', url)
+            data["end_time"] = end_time
+        headers = self._gen_auth_header("GET", url)
         async with client.get(url, headers=headers, params=data) as res:
             json_res = await res.json()
-        return json_res['result']
+        return json_res["result"]
 
-    async def get_full_spot_margin_history(self, start_time: float, end_time: float) -> List[dict]:
+    async def get_full_spot_margin_history(
+        self, start_time: float, end_time: float
+    ) -> List[dict]:
         results = []
         while True:
             result = await self.get_spot_margin_history(start_time, end_time)
-            usd_result = [r for r in result if r['coin'] == 'USD' and r not in results]
+            usd_result = [r for r in result if r["coin"] == "USD" and r not in results]
             if len(usd_result) == 0:
                 break
             results.extend(usd_result)
-            end_time = min(dateutil.parser.parse(r['time']).timestamp() for r in usd_result)
-        return sorted(results, key=lambda r: dateutil.parser.parse(r['time']))
+            end_time = min(
+                dateutil.parser.parse(r["time"]).timestamp() for r in usd_result
+            )
+        return sorted(results, key=lambda r: dateutil.parser.parse(r["time"]))
 
     async def get_coins(self) -> List[dict]:
         client = self._get_rest_client()
         url = self.REST_URL + "/wallet/coins"
-        headers = self._gen_auth_header('GET', url)
+        headers = self._gen_auth_header("GET", url)
         async with client.get(url, headers=headers) as res:
             json_res = await res.json()
-        return json_res['result']
+        return json_res["result"]
 
     async def place_order(
-        self, market: str, side: Side, type: FtxOrderType, size: Decimal,
-        price: Decimal = None, reduce_only: bool = False, ioc: bool = False,
-        post_only: bool = False, client_id: str = None) -> dict:
+        self,
+        market: str,
+        side: Side,
+        type: FtxOrderType,
+        size: Decimal,
+        price: Decimal = None,
+        reduce_only: bool = False,
+        ioc: bool = False,
+        post_only: bool = False,
+        client_id: str = None,
+    ) -> dict:
         if type == FtxOrderType.LIMIT:
             assert price is not None, "price cannot be None when placing limit order"
         else:
@@ -181,50 +218,87 @@ class FtxExchange:
         client = self._get_rest_client()
         url = self.REST_URL + "/orders"
         data = {
-            'market': market,
-            'side': side.value,
-            'type': type.value,
-            'size': str(size),
+            "market": market,
+            "side": side.value,
+            "type": type.value,
+            "size": str(size),
         }
         if price:
-            data['price'] = str(price)
+            data["price"] = str(price)
         else:
-            data['price'] = None
+            data["price"] = None
         if reduce_only:
-            data['reduceOnly'] = reduce_only
+            data["reduceOnly"] = reduce_only
         if ioc:
-            data['ioc'] = ioc
+            data["ioc"] = ioc
         if post_only:
-            data['post_only'] = post_only
+            data["post_only"] = post_only
         if client_id:
-            data['clientId'] = client_id
-        headers = self._gen_auth_header('POST', url, body=data)
+            data["clientId"] = client_id
+        headers = self._gen_auth_header("POST", url, body=data)
         async with client.post(url, headers=headers, json=data) as res:
             res_json = await res.json()
-            if res_json['success']:
+            if res_json["success"]:
                 # TODO ftx response order id type is int, should cast to str
-                result = res_json['result']
+                result = res_json["result"]
                 if type == FtxOrderType.LIMIT:
-                    self.logger().info(f"Ftx place {market} {type.value} {side.value} order (p: {price}, s: {size}, id: {result['id']})")
+                    self.logger().info(
+                        f"Ftx place {market} {type.value} {side.value} order (p: {price}, s: {size}, id: {result['id']})"
+                    )
                 else:
-                    self.logger().info(f"Ftx place {market} {type.value} {side.value} order (s: {size}, id: {result['id']})")
+                    self.logger().info(
+                        f"Ftx place {market} {type.value} {side.value} order (s: {size}, id: {result['id']})"
+                    )
                 return result
             else:
-                error_msg = res_json.get('error')
+                error_msg = res_json.get("error")
                 ftx_throw_exception(error_msg)
-    
-    async def place_market_order(self, market: str, side: Side, size: Decimal, reduce_only: bool = False) -> dict:
-        res_json = await self.place_order(market, side, FtxOrderType.MARKET, size, reduce_only=reduce_only)
+
+    async def place_market_order(
+        self, market: str, side: Side, size: Decimal, reduce_only: bool = False
+    ) -> dict:
+        res_json = await self.place_order(
+            market, side, FtxOrderType.MARKET, size, reduce_only=reduce_only
+        )
         return res_json
 
-    async def place_ioc_order(self, market: str, side: Side, size: Decimal, price: Decimal, reduce_only: bool = False) -> dict:
-        res_json = await self.place_order(market, side, FtxOrderType.LIMIT, size, price, ioc=True, reduce_only=reduce_only)
+    async def place_ioc_order(
+        self,
+        market: str,
+        side: Side,
+        size: Decimal,
+        price: Decimal,
+        reduce_only: bool = False,
+    ) -> dict:
+        res_json = await self.place_order(
+            market,
+            side,
+            FtxOrderType.LIMIT,
+            size,
+            price,
+            ioc=True,
+            reduce_only=reduce_only,
+        )
         return res_json
 
     async def place_limit_order(
-        self, market: str, side: Side, size: Decimal,
-        price: Decimal, post_only: bool = False, reduce_only: bool = False) -> dict:
-        res_json = await self.place_order(market, side, FtxOrderType.LIMIT, size, price, post_only=post_only, reduce_only=reduce_only)
+        self,
+        market: str,
+        side: Side,
+        size: Decimal,
+        price: Decimal,
+        post_only: bool = False,
+        reduce_only: bool = False,
+    ) -> dict:
+        res_json = await self.place_order(
+            market,
+            side,
+            FtxOrderType.LIMIT,
+            size,
+            price,
+            post_only=post_only,
+            reduce_only=reduce_only,
+        )
         return res_json
 
     def quantize_order_size(self, size: Decimal, size_tick: Decimal) -> Decimal:
@@ -236,17 +310,19 @@ class FtxExchange:
     async def cancel_order(self, order_id: str) -> bool:
         client = self._get_rest_client()
         url = self.REST_URL + f"/orders/{order_id}"
-        headers = self._gen_auth_header('DELETE', url)
+        headers = self._gen_auth_header("DELETE", url)
         async with client.delete(url, headers=headers) as res:
             res_json = await res.json()
-            if res_json['success']:
+            if res_json["success"]:
                 self.logger().info(f"{res_json['result']}, order id: {order_id}")
                 return True
             else:
                 self.logger().error(f"Fail to cancel order: {order_id}")
                 return False
 
-    async def get_fills_since_last_flat(self, symbol: str, position: Decimal) -> List[dict]:
+    async def get_fills_since_last_flat(
+        self, symbol: str, position: Decimal
+    ) -> List[dict]:
         """Get all fills of a symbol since last last
         position > 0 means long position
         position < 0 means short position
@@ -260,72 +336,85 @@ class FtxExchange:
             id_set = set()
             end_time = time.time()
             while True:
-                url = self.REST_URL + f"/fills?market={symbol}&start_time=0&end_time={end_time}"
-                headers = self._gen_auth_header('GET', url)
+                url = (
+                    self.REST_URL
+                    + f"/fills?market={symbol}&start_time=0&end_time={end_time}"
+                )
+                headers = self._gen_auth_header("GET", url)
                 async with client.get(url, headers=headers) as res:
                     json_res = await res.json()
-                fills = json_res['result']
-                dedup_fills = [f for f in fills if f['id'] not in id_set]
+                fills = json_res["result"]
+                dedup_fills = [f for f in fills if f["id"] not in id_set]
                 if len(dedup_fills) == 0:
                     break
                 for fill in dedup_fills:
-                    size = Decimal(str(fill['size']))
+                    size = Decimal(str(fill["size"]))
                     if position > 0:
-                        if fill['side'] == 'buy':
+                        if fill["side"] == "buy":
                             temp_position -= size
                             all_fills.append(fill)
-                            id_set.add(fill['id'])
+                            id_set.add(fill["id"])
                             if temp_position <= 0:
                                 break
                         else:
                             temp_position += size
                             all_fills.append(fill)
-                            id_set.add(fill['id'])
+                            id_set.add(fill["id"])
                     elif position < 0:
-                        if fill['side'] == 'sell':
+                        if fill["side"] == "sell":
                             temp_position += size
                             all_fills.append(fill)
-                            id_set.add(fill['id'])
+                            id_set.add(fill["id"])
                             if temp_position >= 0:
                                 break
                         else:
                             temp_position -= size
                             all_fills.append(fill)
-                            id_set.add(fill['id'])
-                end_time = min([dateutil.parser.parse(fill['time']).timestamp() for fill in all_fills]) - 0.000001
-            return sorted(all_fills, key=lambda fill: dateutil.parser.parse(fill['time']))
+                            id_set.add(fill["id"])
+                end_time = (
+                    min(
+                        [
+                            dateutil.parser.parse(fill["time"]).timestamp()
+                            for fill in all_fills
+                        ]
+                    )
+                    - 0.000001
+                )
+            return sorted(
+                all_fills, key=lambda fill: dateutil.parser.parse(fill["time"])
+            )
 
     async def get_positions(self):
         client = self._get_rest_client()
         url = self.REST_URL + "/positions"
-        headers = self._gen_auth_header('GET', url)
+        headers = self._gen_auth_header("GET", url)
         async with client.get(url, headers=headers) as res:
             json_res = await res.json()
-        return json_res['result']
+        return json_res["result"]
 
     async def get_future(self, symbol: str):
         client = self._get_rest_client()
         url = self.REST_URL + f"/futures/{symbol}"
-        headers = self._gen_auth_header('GET', url)
+        headers = self._gen_auth_header("GET", url)
         async with client.get(url, headers=headers) as res:
             json_res = await res.json()
-        return json_res['result']
+        return json_res["result"]
 
     async def get_balances(self):
         client = self._get_rest_client()
         url = self.REST_URL + "/wallet/balances"
-        headers = self._gen_auth_header('GET', url)
+        headers = self._gen_auth_header("GET", url)
         async with client.get(url, headers=headers) as res:
             json_res = await res.json()
-        return json_res['result']
+        return json_res["result"]
 
     async def get_order(self, order_id: str) -> dict:
         client = self._get_rest_client()
-        url = self.REST_URL +f"/orders/{order_id}"
-        headers = self._gen_auth_header('GET', url)
+        url = self.REST_URL + f"/orders/{order_id}"
+        headers = self._gen_auth_header("GET", url)
         async with client.get(url, headers=headers) as res:
             json_res = await res.json()
-        return json_res['result']
+        return json_res["result"]
 
     def ws_register_order_channel(self):
         self._to_subscribe_order_channel = True
@@ -346,42 +435,69 @@ class FtxExchange:
                         if self._to_subscribe_order_channel:
                             ts = int(time.time() * 1e3)
                             sign_str = f"{ts}websocket_login".encode()
-                            sign = hmac.new(self._api_secret.encode(), sign_str, 'sha256').hexdigest()
+                            sign = hmac.new(
+                                self._api_secret.encode(), sign_str, "sha256"
+                            ).hexdigest()
                             payload = {
-                                'args': {
+                                "args": {
                                     "key": self._api_key,
                                     "sign": sign,
-                                    "time": ts,},
-                                'op': 'login'}
+                                    "time": ts,
+                                },
+                                "op": "login",
+                            }
                             if self._subaccount_name:
-                                payload['args']['subaccount'] = self._subaccount_name
+                                payload["args"]["subaccount"] = self._subaccount_name
                             await ws.send_json(payload)
-                            await ws.send_json({'op': 'subscribe', 'channel': 'orders'})
+                            await ws.send_json({"op": "subscribe", "channel": "orders"})
                         if self._to_subscribe_ticker_channel:
                             for symbol in self._ticker_symbols:
-                                await ws.send_json({'op': 'subscribe', 'channel': 'ticker', 'market': symbol})
+                                await ws.send_json(
+                                    {
+                                        "op": "subscribe",
+                                        "channel": "ticker",
+                                        "market": symbol,
+                                    }
+                                )
                         async for msg in ws:
-                            if msg.type in (aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.ERROR):
+                            if msg.type in (
+                                aiohttp.WSMsgType.CLOSED,
+                                aiohttp.WSMsgType.ERROR,
+                            ):
                                 break
                             msg_json: dict = msg.json()
-                            if msg_json.get('type') == 'update' and msg_json.get('channel') == 'ticker':
-                                data = msg_json['data']
-                                market = msg_json['market']
+                            if (
+                                msg_json.get("type") == "update"
+                                and msg_json.get("channel") == "ticker"
+                            ):
+                                data = msg_json["data"]
+                                market = msg_json["market"]
                                 await self._ticker_notify_all(market)
                                 self.tickers[market] = FtxTicker.ws_entry(market, data)
-                            elif msg_json.get('type') == 'update' and msg_json.get('channel') == 'orders':
-                                data = msg_json['data']
+                            elif (
+                                msg_json.get("type") == "update"
+                                and msg_json.get("channel") == "orders"
+                            ):
+                                data = msg_json["data"]
                                 self.orders.put_nowait(data)
-                                self.logger().debug(f'Receive orders data: {data}')
-                            elif msg_json.get('type') == 'pong':
-                                self.logger().debug('pong')
-                            elif msg_json.get('type') == 'subscribed' and msg_json.get('channel') == 'ticker':
-                                market = msg_json['market']
-                                self.logger().debug(f'Subscribed {market} ticker channel')
-                            elif msg_json.get('type') == 'subscribed' and msg_json.get('channel') == 'orders':
-                                self.logger().debug('Subscribed orders channel')
+                                self.logger().debug(f"Receive orders data: {data}")
+                            elif msg_json.get("type") == "pong":
+                                self.logger().debug("pong")
+                            elif (
+                                msg_json.get("type") == "subscribed"
+                                and msg_json.get("channel") == "ticker"
+                            ):
+                                market = msg_json["market"]
+                                self.logger().debug(
+                                    f"Subscribed {market} ticker channel"
+                                )
+                            elif (
+                                msg_json.get("type") == "subscribed"
+                                and msg_json.get("channel") == "orders"
+                            ):
+                                self.logger().debug("Subscribed orders channel")
                             else:
-                                self.logger().debug(f'Receive unknown msg: {msg_json}')
+                                self.logger().debug(f"Receive unknown msg: {msg_json}")
             except asyncio.CancelledError:
                 raise
             except Exception:
@@ -394,7 +510,7 @@ class FtxExchange:
     async def _ping(self, ws: aiohttp.ClientWebSocketResponse):
         while True:
             try:
-                await ws.send_json({'op': 'ping'})
+                await ws.send_json({"op": "ping"})
                 await asyncio.sleep(15)
             except asyncio.CancelledError:
                 raise

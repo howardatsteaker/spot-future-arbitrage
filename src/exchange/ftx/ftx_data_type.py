@@ -1,9 +1,10 @@
 from __future__ import annotations
-from dataclasses import dataclass
-from enum import Enum
-from decimal import Decimal
+
 import time
 import uuid
+from dataclasses import dataclass
+from decimal import Decimal
+from enum import Enum
 
 
 class FtxCandleResolution(Enum):
@@ -32,7 +33,9 @@ class FtxCandleResolution(Enum):
         elif seconds == 86400:
             return cls.ONE_DAY
         else:
-            raise ValueError("'seconds' must be one of (15, 60, 300, 900, 3600, 14400, 86400)")
+            raise ValueError(
+                "'seconds' must be one of (15, 60, 300, 900, 3600, 14400, 86400)"
+            )
 
 
 @dataclass
@@ -44,7 +47,7 @@ class FtxTradingRule:
 @dataclass
 class Ftx_EWMA_InterestRate:
     lookback_days: int
-    lambda_: Decimal = Decimal('0.02')
+    lambda_: Decimal = Decimal("0.02")
     last_ewma: Decimal = None
     last_timestamp: float = None
 
@@ -54,7 +57,7 @@ class Ftx_EWMA_InterestRate:
 
     @property
     def yearly_rate(self) -> Decimal:
-        return self.last_ewma * Decimal('24') * Decimal('365')
+        return self.last_ewma * Decimal("24") * Decimal("365")
 
 
 @dataclass
@@ -77,31 +80,31 @@ class FtxHedgePair:
 
     @staticmethod
     def coin_to_spot(coin: str) -> str:
-        return coin + '/USD'
+        return coin + "/USD"
 
     @staticmethod
     def coin_to_future(coin: str, season: str) -> str:
-        return coin + '-' + season
+        return coin + "-" + season
 
     @staticmethod
     def spot_to_coin(spot: str) -> str:
-        return spot.split('/')[0]
+        return spot.split("/")[0]
 
     @staticmethod
     def spot_to_future(spot: str, season: str) -> str:
-        return spot.split('/')[0] + '-' + season
+        return spot.split("/")[0] + "-" + season
 
     @staticmethod
     def future_to_coin(future: str) -> str:
-        return future.split('-')[0]
+        return future.split("-")[0]
 
     @staticmethod
     def future_to_spot(future: str) -> str:
-        return future.split('-')[0] + '/USD'
+        return future.split("-")[0] + "/USD"
 
     @staticmethod
     def is_spot(symbol: str) -> bool:
-        return symbol.endswith('/USD')
+        return symbol.endswith("/USD")
 
     @staticmethod
     def is_future(symbol: str, season: str) -> bool:
@@ -109,8 +112,8 @@ class FtxHedgePair:
 
     @staticmethod
     def to_dir_name(symbol: str) -> str:
-        symbol = symbol.replace('/', '_')
-        symbol = symbol.replace('-', '_')
+        symbol = symbol.replace("/", "_")
+        symbol = symbol.replace("-", "_")
         return symbol
 
 
@@ -197,25 +200,26 @@ class FtxTicker:
     def ws_entry(cls, symbol: str, ticker_info: dict) -> FtxTicker:
         return cls(
             symbol=symbol,
-            bid=Decimal(str(ticker_info['bid'])),
-            ask=Decimal(str(ticker_info['ask'])),
-            bid_size=Decimal(str(ticker_info['bidSize'])),
-            ask_size=Decimal(str(ticker_info['askSize'])),
-            last=Decimal(str(ticker_info['last'])),
-            timestamp=ticker_info['time'],
+            bid=Decimal(str(ticker_info["bid"])),
+            ask=Decimal(str(ticker_info["ask"])),
+            bid_size=Decimal(str(ticker_info["bidSize"])),
+            ask_size=Decimal(str(ticker_info["askSize"])),
+            last=Decimal(str(ticker_info["last"])),
+            timestamp=ticker_info["time"],
         )
 
     def is_delay(self, threshold: float) -> bool:
         return time.time() - self.timestamp > threshold
 
+
 class Side(Enum):
-    BUY = 'buy'
-    SELL = 'sell'
+    BUY = "buy"
+    SELL = "sell"
 
 
 class FtxOrderType(Enum):
-    LIMIT ='limit'
-    MARKET = 'market'
+    LIMIT = "limit"
+    MARKET = "market"
 
 
 class FtxOrderStatus(Enum):
@@ -225,9 +229,9 @@ class FtxOrderStatus(Enum):
 
     @classmethod
     def str_entry(cls, status: str) -> FtxOrderStatus:
-        if status == 'new':
+        if status == "new":
             return cls.NEW
-        elif status == 'open':
+        elif status == "open":
             return cls.OPEN
         else:
             return cls.CLOSED

@@ -1,34 +1,32 @@
-import re
-import logging
-import pathlib
-import time
 import asyncio
-from typing import Dict, Tuple
-from decimal import Decimal
-from concurrent.futures import ProcessPoolExecutor, Future
+import logging
 import multiprocessing as mp
+import pathlib
+import re
+import time
+from concurrent.futures import Future, ProcessPoolExecutor
+from decimal import Decimal
 from multiprocessing.connection import Connection
+from typing import Dict, Tuple
+
 import dateutil.parser
-from src.script.fund_manager import FundManager
+
 from src.common import Config, Exchange
 from src.exchange.ftx.ftx_client import FtxExchange
-from src.exchange.ftx.ftx_data_type import (
-    FtxCollateralWeight,
-    Ftx_EWMA_InterestRate,
-    FtxCollateralWeightMessage,
-    FtxFeeRate,
-    FtxFeeRateMessage,
-    FtxFundOpenFilledMessage,
-    FtxFundRequestMessage,
-    FtxInterestRateMessage,
-    FtxLeverageInfo,
-    FtxLeverageMessage,
-    FtxOrderMessage,
-    FtxOrderStatus,
-    FtxOrderType,
-    FtxTradingRule, FtxHedgePair,
-    FtxTradingRuleMessage,
-    Side)
+from src.exchange.ftx.ftx_data_type import (Ftx_EWMA_InterestRate,
+                                            FtxCollateralWeight,
+                                            FtxCollateralWeightMessage,
+                                            FtxFeeRate, FtxFeeRateMessage,
+                                            FtxFundOpenFilledMessage,
+                                            FtxFundRequestMessage,
+                                            FtxHedgePair,
+                                            FtxInterestRateMessage,
+                                            FtxLeverageInfo,
+                                            FtxLeverageMessage,
+                                            FtxOrderMessage, FtxOrderStatus,
+                                            FtxOrderType, FtxTradingRule,
+                                            FtxTradingRuleMessage, Side)
+from src.script.fund_manager import FundManager
 from src.script.sub_process import run_sub_process
 
 
@@ -44,10 +42,14 @@ class MainProcess:
         self.config: Config = config
         self.logger = self._init_get_logger()
         if config.exchange == Exchange.FTX:
-            self.exchange = FtxExchange(config.api_key, config.api_secret, config.subaccount_name)
+            self.exchange = FtxExchange(
+                config.api_key, config.api_secret, config.subaccount_name
+            )
             self.trading_rules: Dict[str, FtxTradingRule] = {}
             self.hedge_pairs: Dict[str, FtxHedgePair] = {}
-            self.ewma_interest_rate = Ftx_EWMA_InterestRate(config.interest_rate_lookback_days)
+            self.ewma_interest_rate = Ftx_EWMA_InterestRate(
+                config.interest_rate_lookback_days
+            )
             self.fee_rate = FtxFeeRate()
             self.collateral_weights: Dict[str, FtxCollateralWeight] = {}
             self.leverage_info = FtxLeverageInfo()
@@ -87,23 +89,23 @@ class MainProcess:
 
     def _init_get_logger(self):
         log = self.config.log
-        level = logging.getLevelName(log['level'].upper())
-        fmt = log['fmt']
-        datefmt = log['datefmt']
+        level = logging.getLevelName(log["level"].upper())
+        fmt = log["fmt"]
+        datefmt = log["datefmt"]
         formatter = logging.Formatter(fmt, datefmt)
         handlers = []
-        if log['to_console']:
+        if log["to_console"]:
             ch = logging.StreamHandler()
             ch.setFormatter(formatter)
-            ch.set_name('stream_formatter')
+            ch.set_name("stream_formatter")
             handlers.append(ch)
-        if log['to_file']:
-            path = pathlib.Path(log['file_path'])
+        if log["to_file"]:
+            path = pathlib.Path(log["file_path"])
             if not path.exists():
                 path.parent.mkdir(parents=True, exist_ok=True)
-            fh = logging.FileHandler(log['file_path'], encoding='utf-8')
+            fh = logging.FileHandler(log["file_path"], encoding="utf-8")
             fh.setFormatter(formatter)
-            fh.set_name('file_handler')
+            fh.set_name("file_handler")
             handlers.append(fh)
         logging.basicConfig(level=level, handlers=handlers)
         logger = logging.getLogger()
@@ -129,21 +131,35 @@ class MainProcess:
 
     def start_network(self):
         if self._market_status_polling_task is None:
-            self._market_status_polling_task = asyncio.create_task(self._market_status_polling_loop())
+            self._market_status_polling_task = asyncio.create_task(
+                self._market_status_polling_loop()
+            )
         if self._interest_rate_polling_task is None:
-            self._interest_rate_polling_task = asyncio.create_task(self._interest_rate_polling_loop())
+            self._interest_rate_polling_task = asyncio.create_task(
+                self._interest_rate_polling_loop()
+            )
         if self._fee_rate_polling_task is None:
-            self._fee_rate_polling_task = asyncio.create_task(self._fee_rate_polling_loop())
+            self._fee_rate_polling_task = asyncio.create_task(
+                self._fee_rate_polling_loop()
+            )
         if self._collateral_weight_polling_task is None:
-            self._collateral_weight_polling_task = asyncio.create_task(self._collateral_weight_polling_loop())
+            self._collateral_weight_polling_task = asyncio.create_task(
+                self._collateral_weight_polling_loop()
+            )
         if self._spawn_sub_processes_task is None:
-            self._spawn_sub_processes_task = asyncio.create_task(self._spawn_sub_processes())
+            self._spawn_sub_processes_task = asyncio.create_task(
+                self._spawn_sub_processes()
+            )
         if self._start_ws_task is None:
             self._start_ws_task = asyncio.create_task(self.exchange.ws_start_network())
         if self._account_info_polling_task is None:
-            self._account_info_polling_task = asyncio.create_task(self._account_info_polling_loop())
+            self._account_info_polling_task = asyncio.create_task(
+                self._account_info_polling_loop()
+            )
         if self._fund_manager_polling_task is None:
-            self._fund_manager_polling_task = asyncio.create_task(self._fund_manager_polling_loop())
+            self._fund_manager_polling_task = asyncio.create_task(
+                self._fund_manager_polling_loop()
+            )
         if self._listen_ws_orders_task is None:
             self._listen_ws_orders_task = asyncio.create_task(self._listen_ws_orders())
 
@@ -192,14 +208,16 @@ class MainProcess:
             except asyncio.CancelledError:
                 raise
             except Exception:
-                self.logger.error("Unexpected error while fetching market status.", exc_info=True)
+                self.logger.error(
+                    "Unexpected error while fetching market status.", exc_info=True
+                )
                 await asyncio.sleep(1)
 
     def _update_trading_rule(self, market_infos: dict):
         trading_rules = {}
         for market in market_infos:
-            symbol = market['name']
-            min_order_size = Decimal(str(market['sizeIncrement']))
+            symbol = market["name"]
+            min_order_size = Decimal(str(market["sizeIncrement"]))
             trading_rules[symbol] = FtxTradingRule(symbol, min_order_size)
         self.trading_rules.update(trading_rules)
         self._trading_rules_ready_event.set()
@@ -212,18 +230,17 @@ class MainProcess:
                 conn.send(FtxTradingRuleMessage(self.trading_rules[future]))
 
     async def _update_hedge_pair(self, market_infos: dict):
-        symbol_set = set([info['name'] for info in market_infos if info['enabled']])
+        symbol_set = set([info["name"] for info in market_infos if info["enabled"]])
         regex = re.compile(f"[0-9A-Z]+-{self.config.season}")
         hedge_pairs = {}
         for symbol in symbol_set:
-            if regex.match(symbol) and FtxHedgePair.future_to_spot(symbol) in symbol_set:
+            if (
+                regex.match(symbol)
+                and FtxHedgePair.future_to_spot(symbol) in symbol_set
+            ):
                 coin = FtxHedgePair.future_to_coin(symbol)
                 spot = FtxHedgePair.coin_to_spot(coin)
-                hedge_pairs[coin] = FtxHedgePair(
-                    coin=coin,
-                    spot=spot,
-                    future=symbol
-                )
+                hedge_pairs[coin] = FtxHedgePair(coin=coin, spot=spot, future=symbol)
         if len(self.config.whitelist) == 0:
             self.hedge_pairs.update(hedge_pairs)
         else:
@@ -231,7 +248,9 @@ class MainProcess:
                 if hedge_pairs.get(coin):
                     self.hedge_pairs[coin] = hedge_pairs[coin]
                 else:
-                    self.logger.warning(f"{coin} in whitelist is not found in the market")
+                    self.logger.warning(
+                        f"{coin} in whitelist is not found in the market"
+                    )
 
         async with self._hedge_pair_initialized_cond:
             self._hedge_pair_initialized_cond.notify_all()
@@ -250,10 +269,17 @@ class MainProcess:
                     await asyncio.sleep(self.INTEREST_RATE_POLLING_INTERVAL)
                     continue
                 for info in rate_info:
-                    rate = Decimal(str(info['rate']))
-                    ewma = self.ewma_interest_rate.lambda_ * rate + (1 - self.ewma_interest_rate.lambda_) * ewma if ewma else rate
+                    rate = Decimal(str(info["rate"]))
+                    ewma = (
+                        self.ewma_interest_rate.lambda_ * rate
+                        + (1 - self.ewma_interest_rate.lambda_) * ewma
+                        if ewma
+                        else rate
+                    )
                 self.ewma_interest_rate.last_ewma = ewma
-                self.ewma_interest_rate.last_timestamp = dateutil.parser.parse(rate_info[-1]['time']).timestamp()
+                self.ewma_interest_rate.last_timestamp = dateutil.parser.parse(
+                    rate_info[-1]["time"]
+                ).timestamp()
                 self._interest_rate_ready_event.set()
                 for (conn, _) in self._connections.values():
                     conn.send(FtxInterestRateMessage(self.ewma_interest_rate))
@@ -261,15 +287,17 @@ class MainProcess:
             except asyncio.CancelledError:
                 raise
             except Exception:
-                self.logger.error("Unexpected error while fetching USD interest rate.", exc_info=True)
+                self.logger.error(
+                    "Unexpected error while fetching USD interest rate.", exc_info=True
+                )
                 await asyncio.sleep(5)
 
     async def _fee_rate_polling_loop(self):
         while True:
             try:
                 account = await self.exchange.get_account()
-                self.fee_rate.maker_fee_rate = Decimal(str(account['makerFee']))
-                self.fee_rate.taker_fee_rate = Decimal(str(account['takerFee']))
+                self.fee_rate.maker_fee_rate = Decimal(str(account["makerFee"]))
+                self.fee_rate.taker_fee_rate = Decimal(str(account["takerFee"]))
                 self._fee_rate_ready_event.set()
                 for (conn, _) in self._connections.values():
                     conn.send(FtxFeeRateMessage(self.fee_rate))
@@ -277,42 +305,48 @@ class MainProcess:
             except asyncio.CancelledError:
                 raise
             except Exception:
-                self.logger.error("Unexpected error while fetching account fee rate.", exc_info=True)
+                self.logger.error(
+                    "Unexpected error while fetching account fee rate.", exc_info=True
+                )
                 await asyncio.sleep(5)
 
     async def _collateral_weight_polling_loop(self):
-         while True:
+        while True:
             try:
                 coin_infos = await self.exchange.get_coins()
                 for info in coin_infos:
-                    coin = info['id']
-                    weight = Decimal(str(info['collateralWeight']))
+                    coin = info["id"]
+                    weight = Decimal(str(info["collateralWeight"]))
                     self.collateral_weights[coin] = FtxCollateralWeight(
-                        coin=coin,
-                        weight=weight)
+                        coin=coin, weight=weight
+                    )
                     if self._connections.get(coin):
                         self._connections[coin][0].send(
-                            FtxCollateralWeightMessage(self.collateral_weights[coin]))
+                            FtxCollateralWeightMessage(self.collateral_weights[coin])
+                        )
                 self._collateral_weights_ready_event.set()
                 await asyncio.sleep(self.COLLATERAL_WEIGHT_POLLING_INTERVAL)
             except asyncio.CancelledError:
                 raise
             except Exception:
-                self.logger.error("Unexpected error while fetching account fee rate.", exc_info=True)
+                self.logger.error(
+                    "Unexpected error while fetching account fee rate.", exc_info=True
+                )
                 await asyncio.sleep(5)
 
     async def _account_info_polling_loop(self):
         while True:
             try:
                 account_info = await self.exchange.get_account()
-                account_value = Decimal(str(account_info['totalAccountValue']))
-                position_value = Decimal(str(account_info['totalPositionSize']))
+                account_value = Decimal(str(account_info["totalAccountValue"]))
+                position_value = Decimal(str(account_info["totalPositionSize"]))
                 current_leverage = position_value / account_value
                 self.leverage_info = FtxLeverageInfo(
-                    max_leverage=Decimal(str(account_info['leverage'])),
+                    max_leverage=Decimal(str(account_info["leverage"])),
                     account_value=account_value,
                     position_value=position_value,
-                    current_leverage=current_leverage)
+                    current_leverage=current_leverage,
+                )
                 self._account_info_ready_event.set()
                 for (conn, _) in self._connections.values():
                     conn.send(FtxLeverageMessage(self.leverage_info))
@@ -320,7 +354,9 @@ class MainProcess:
             except asyncio.CancelledError:
                 raise
             except Exception:
-                self.logger.error("Unexpected error while fetching account info.", exc_info=True)
+                self.logger.error(
+                    "Unexpected error while fetching account info.", exc_info=True
+                )
                 await asyncio.sleep(5)
 
     async def _fund_manager_polling_loop(self):
@@ -329,13 +365,17 @@ class MainProcess:
                 account_info = await self.exchange.get_account()
                 await self.fund_manager.update_account_state(account_info)
                 balances = await self.exchange.get_balances()
-                usd_info = next(b for b in balances if b['coin'] == 'USD')
-                await self.fund_manager.update_usd_state(Decimal(str(usd_info['free'])), Decimal(str(usd_info['spotBorrow'])))
+                usd_info = next(b for b in balances if b["coin"] == "USD")
+                await self.fund_manager.update_usd_state(
+                    Decimal(str(usd_info["free"])), Decimal(str(usd_info["spotBorrow"]))
+                )
                 await asyncio.sleep(self.FUND_MANAGER_POLLING_INTERVAL)
             except asyncio.CancelledError:
                 raise
             except Exception:
-                self.logger.error("Unexpected error while fetching account info.", exc_info=True)
+                self.logger.error(
+                    "Unexpected error while fetching account info.", exc_info=True
+                )
                 await asyncio.sleep(5)
 
     async def _spawn_sub_processes(self):
@@ -360,25 +400,51 @@ class MainProcess:
                         conn1, conn2 = mp.Pipe(duplex=True)
                         self._connections[hedge_pair.coin] = (conn1, conn2)
                         self._sub_process_notify_events[coin] = asyncio.Event()
-                        sub_process_future = self._loop.run_in_executor(self._executor, run_sub_process, hedge_pair, self.config, conn2)
+                        sub_process_future = self._loop.run_in_executor(
+                            self._executor,
+                            run_sub_process,
+                            hedge_pair,
+                            self.config,
+                            conn2,
+                        )
                         self._sub_process_futures[coin] = sub_process_future
-                        self._sub_process_listen_tasks[coin] = asyncio.create_task(self._listen_sub_process_msg(coin))
+                        self._sub_process_listen_tasks[coin] = asyncio.create_task(
+                            self._listen_sub_process_msg(coin)
+                        )
 
                         # notify params
                         if self.trading_rules.get(hedge_pair.spot):
-                            conn1.send(FtxTradingRuleMessage(self.trading_rules[hedge_pair.spot]))
+                            conn1.send(
+                                FtxTradingRuleMessage(
+                                    self.trading_rules[hedge_pair.spot]
+                                )
+                            )
                         if self.trading_rules.get(hedge_pair.future):
-                            conn1.send(FtxTradingRuleMessage(self.trading_rules[hedge_pair.future]))
-                        conn1.send(FtxInterestRateMessage(ewma_interest_rate=self.ewma_interest_rate))
+                            conn1.send(
+                                FtxTradingRuleMessage(
+                                    self.trading_rules[hedge_pair.future]
+                                )
+                            )
+                        conn1.send(
+                            FtxInterestRateMessage(
+                                ewma_interest_rate=self.ewma_interest_rate
+                            )
+                        )
                         conn1.send(FtxFeeRateMessage(fee_rate=self.fee_rate))
                         if self.collateral_weights.get(coin):
-                            conn1.send(FtxCollateralWeightMessage(collateral_weight=self.collateral_weights[coin]))
+                            conn1.send(
+                                FtxCollateralWeightMessage(
+                                    collateral_weight=self.collateral_weights[coin]
+                                )
+                            )
                         conn1.send(FtxLeverageMessage(leverage=self.leverage_info))
 
             except asyncio.CancelledError:
                 raise
             except Exception as e:
-                self.logger.error(f"Unexpected error while spawn new sub process. {e}", exc_info=True)
+                self.logger.error(
+                    f"Unexpected error while spawn new sub process. {e}", exc_info=True
+                )
 
     def _stop_all_sub_processes(self):
         for coin, task in self._sub_process_futures.items():
@@ -408,7 +474,10 @@ class MainProcess:
             except asyncio.CancelledError:
                 raise
             except Exception:
-                self.logger.error("Unexpected error while listen to sub process message.", exc_info=True)
+                self.logger.error(
+                    "Unexpected error while listen to sub process message.",
+                    exc_info=True,
+                )
                 await asyncio.sleep(5)
 
     async def _stop_all_sub_process_listen_tasks(self):
@@ -420,16 +489,24 @@ class MainProcess:
             try:
                 data = await self.exchange.orders.get()
                 order_msg = FtxOrderMessage(
-                    id=str(data['id']),
-                    market=data['market'],
-                    type=FtxOrderType.LIMIT if data['type'] == 'limit' else FtxOrderType.MARKET,
-                    side=Side.BUY if data['side'] == 'buy' else Side.SELL,
-                    size=Decimal(str(data['size'])),
-                    price=Decimal(str(data['price'])) if isinstance(data['price'], (float, int)) else data['price'],
-                    status=FtxOrderStatus.str_entry(data['status']),
-                    filled_size=Decimal(str(data['filledSize'])),
-                    avg_fill_price=Decimal(str(data['avgFillPrice'])) if data['avgFillPrice'] else None,
-                    create_timestamp=dateutil.parser.parse(data['createdAt']).timestamp(),
+                    id=str(data["id"]),
+                    market=data["market"],
+                    type=FtxOrderType.LIMIT
+                    if data["type"] == "limit"
+                    else FtxOrderType.MARKET,
+                    side=Side.BUY if data["side"] == "buy" else Side.SELL,
+                    size=Decimal(str(data["size"])),
+                    price=Decimal(str(data["price"]))
+                    if isinstance(data["price"], (float, int))
+                    else data["price"],
+                    status=FtxOrderStatus.str_entry(data["status"]),
+                    filled_size=Decimal(str(data["filledSize"])),
+                    avg_fill_price=Decimal(str(data["avgFillPrice"]))
+                    if data["avgFillPrice"]
+                    else None,
+                    create_timestamp=dateutil.parser.parse(
+                        data["createdAt"]
+                    ).timestamp(),
                 )
                 if FtxHedgePair.is_spot(order_msg.market):
                     coin = FtxHedgePair.spot_to_coin(order_msg.market)
@@ -446,7 +523,9 @@ class MainProcess:
             except asyncio.CancelledError:
                 raise
             except Exception:
-                self.logger.error("Unexpected error while listen to ws orders.", exc_info=True)
+                self.logger.error(
+                    "Unexpected error while listen to ws orders.", exc_info=True
+                )
                 await asyncio.sleep(5)
 
     async def run(self):

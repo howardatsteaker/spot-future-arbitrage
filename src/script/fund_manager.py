@@ -4,7 +4,10 @@ from decimal import Decimal
 from typing import Dict
 from uuid import UUID
 
-from src.exchange.ftx.ftx_data_type import FtxFundOpenFilledMessage, FtxFundRequestMessage, FtxFundResponseMessage, FtxLeverageInfo
+from src.exchange.ftx.ftx_data_type import (FtxFundOpenFilledMessage,
+                                            FtxFundRequestMessage,
+                                            FtxFundResponseMessage,
+                                            FtxLeverageInfo)
 
 
 @dataclass
@@ -18,12 +21,14 @@ class FundManager:
     lock: asyncio.Lock = asyncio.Lock()
 
     async def update_account_state(self, account_info: dict):
-        free_collateral = Decimal(str(account_info['freeCollateral']))
-        max_leverage = Decimal(str(account_info['leverage']))
-        account_value = Decimal(str(account_info['totalAccountValue']))
-        position_value = Decimal(str(account_info['totalPositionSize']))
+        free_collateral = Decimal(str(account_info["freeCollateral"]))
+        max_leverage = Decimal(str(account_info["leverage"]))
+        account_value = Decimal(str(account_info["totalAccountValue"]))
+        position_value = Decimal(str(account_info["totalPositionSize"]))
         current_leverage = position_value / account_value
-        leverage_info = FtxLeverageInfo(max_leverage, account_value, position_value, current_leverage)
+        leverage_info = FtxLeverageInfo(
+            max_leverage, account_value, position_value, current_leverage
+        )
         async with self.lock:
             self.free_collateral = free_collateral
             for freeze_amount in self.collateral_freeze.values():
@@ -36,7 +41,9 @@ class FundManager:
             self.free_usd = free_usd
             self.borrowed_usd = spot_borrow
 
-    async def request_for_open(self, request: FtxFundRequestMessage) -> FtxFundResponseMessage:
+    async def request_for_open(
+        self, request: FtxFundRequestMessage
+    ) -> FtxFundResponseMessage:
         async with self.lock:
             if self.leverage_limit is not None:
                 collateral = self._get_free_collateral_with_leverage_limit()
@@ -47,7 +54,8 @@ class FundManager:
                     id=request.id,
                     approve=False,
                     fund_supply=Decimal(0),
-                    borrow=Decimal(0))
+                    borrow=Decimal(0),
+                )
             elif request.fund_needed < collateral:
                 # handle collateral change
                 fund_supply = request.fund_needed
@@ -58,10 +66,8 @@ class FundManager:
                 self.borrowed_usd += borrow
                 self.free_usd = max(Decimal(0), self.free_usd - fund_supply)
                 return FtxFundResponseMessage(
-                    id=request.id,
-                    approve=True,
-                    fund_supply=fund_supply,
-                    borrow=borrow)
+                    id=request.id, approve=True, fund_supply=fund_supply, borrow=borrow
+                )
             else:
                 # handle collateral change
                 fund_supply = collateral
@@ -75,10 +81,14 @@ class FundManager:
                     id=request.id,
                     approve=True,
                     fund_supply=fund_supply,
-                    borrow=fund_supply)
+                    borrow=fund_supply,
+                )
 
     def _get_free_collateral_with_leverage_limit(self):
-        available_collateral = (self.leverage_limit * self.leverage_info.account_value - self.leverage_info.position_value) / (self.leverage_limit - 1)
+        available_collateral = (
+            self.leverage_limit * self.leverage_info.account_value
+            - self.leverage_info.position_value
+        ) / (self.leverage_limit - 1)
         return max(Decimal(0), min(available_collateral, self.free_collateral))
 
     async def handle_open_order_filled(self, msg: FtxFundOpenFilledMessage):
@@ -88,4 +98,3 @@ class FundManager:
             self.free_collateral += freeze_amount
             # handle collateral change
             self.free_collateral -= msg.fund_used
-            
