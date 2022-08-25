@@ -88,6 +88,12 @@ class FtxHedgePair:
     def is_future(symbol: str, season: str) -> bool:
         return symbol.endswith(f"-{season}")
 
+    @staticmethod
+    def to_dir_name(symbol: str) -> str:
+        symbol = symbol.replace('/', '_')
+        symbol = symbol.replace('-', '_')
+        return symbol
+
 
 @dataclass
 class FtxLeverageInfo:
