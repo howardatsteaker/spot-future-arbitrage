@@ -127,6 +127,9 @@ class SubProcess:
         if not self.indicator.ready:
             self.logger.debug(f"{self.hedge_pair.coin} indicator not ready")
             return False
+        if self.collateral_weight is None:
+            self.logger.debug(f"{self.hedge_pair.coin} collateral weight not ready")
+            return False
         return True
 
     def _init_get_logger(self):
