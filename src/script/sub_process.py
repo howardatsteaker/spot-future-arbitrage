@@ -394,8 +394,6 @@ class SubProcess:
             return TickerNotifyType.FUTURE
 
     async def open_position(self):
-        if self.config.release_mode:
-            return
         if self.ready:
             # if current leverage is too high, openning new position is disabled
             if self.leverage_info.current_leverage > self.config.leverage_limit:
@@ -761,6 +759,8 @@ class SubProcess:
     async def open_position_loop(self):
         if self.hedge_pair.coin in self.config.blacklist:
             self.logger.info(f"Detect {self.hedge_pair.coin} in the blacklist, which is not allowed to open position. Return")
+            return
+        if self.config.release_mode:
             return
         await self._future_expiry_ts_update_event.wait()
         while self.future_expiry_ts - time.time() > self.config.seconds_before_expiry_to_stop_open_position:
