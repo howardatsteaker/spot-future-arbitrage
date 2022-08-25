@@ -71,8 +71,7 @@ class FtxExchange:
 
         return headers
 
-    async def get_markets(self) -> List[str]:
-        self.logger().debug('Send request get /markets')
+    async def get_markets(self) -> List[dict]:
         client = self._get_rest_client()
         url = self.REST_URL + "/markets"
         async with client.get(url) as res:
