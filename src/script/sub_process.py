@@ -51,6 +51,7 @@ class TickerNotifyType(Enum):
 
 
 class SubProcess:
+    ENTRY_PRICE_POLLING_INTERVAL = 3600
 
     def __init__(self, hedge_pair: FtxHedgePair, config: Config, conn: Connection):
         self.hedge_pair = hedge_pair
@@ -75,6 +76,7 @@ class SubProcess:
         self._consume_main_process_msg_task: asyncio.Task = None
         self._listen_for_ws_task: asyncio.Task = None
         self._indicator_polling_loop_task: asyncio.Task = None
+        self._entry_price_polling_loop_task: asyncio.Task = None
 
         self.spot_entry_price: Decimal = None
         self.future_entry_price: Decimal = None
@@ -91,6 +93,8 @@ class SubProcess:
 
         self._ws_orders: Dict[str, FtxOrderMessage] = TTLCache(maxsize=1000, ttl=60)  # using order_id: str as the mapping key
         self._ws_orders_events: Dict[str, asyncio.Event] = TTLCache(maxsize=1000, ttl=60)  # using order_id: str as the mapping key
+
+        self._state_update_lock = asyncio.Lock()  # this lock is used when updating position size, entry price, and open/close position
 
     @property
     def ready(self) -> bool:
@@ -162,18 +166,30 @@ class SubProcess:
         self.logger.info(f'{self.hedge_pair.future} position size is {self.future_position_size}')
 
     async def _update_entry_price(self):
-        await self._update_position_size()
-        spot_fills = await self.exchange.get_fills_since_last_flat(self.hedge_pair.spot, self.spot_position_size)
-        self.logger.debug(f"length of {self.hedge_pair.spot} fills is: {len(spot_fills)}")
-        future_fills = await self.exchange.get_fills_since_last_flat(self.hedge_pair.future, self.future_position_size)
-        self.logger.debug(f"length of {self.hedge_pair.future} fills is: {len(future_fills)}")
-        self.spot_entry_price = self._compute_entry_price(self.spot_position_size, spot_fills)
-        self.logger.info(f'Update {self.hedge_pair.spot} entry price: {self.spot_entry_price}')
-        self.future_entry_price = self._compute_entry_price(self.future_position_size, future_fills)
-        self.logger.info(f'Update {self.hedge_pair.future} entry price: {self.future_entry_price}')
-        if self.spot_entry_price and self.future_entry_price:
-            basis = self.future_entry_price - self.spot_entry_price
-            self.logger.info(f"Update {self.hedge_pair.coin} basis: {basis}")
+        async with self._state_update_lock:
+            await self._update_position_size()
+            spot_fills = await self.exchange.get_fills_since_last_flat(self.hedge_pair.spot, self.spot_position_size)
+            self.logger.debug(f"length of {self.hedge_pair.spot} fills is: {len(spot_fills)}")
+            future_fills = await self.exchange.get_fills_since_last_flat(self.hedge_pair.future, self.future_position_size)
+            self.logger.debug(f"length of {self.hedge_pair.future} fills is: {len(future_fills)}")
+            self.spot_entry_price = self._compute_entry_price(self.spot_position_size, spot_fills)
+            self.logger.info(f'Update {self.hedge_pair.spot} entry price: {self.spot_entry_price}')
+            self.future_entry_price = self._compute_entry_price(self.future_position_size, future_fills)
+            self.logger.info(f'Update {self.hedge_pair.future} entry price: {self.future_entry_price}')
+            if self.spot_entry_price and self.future_entry_price:
+                basis = self.future_entry_price - self.spot_entry_price
+                self.logger.info(f"Update {self.hedge_pair.coin} basis: {basis}")
+
+    async def _entry_price_polling_loop(self):
+        while True:
+            try:
+                await self._update_entry_price()
+                await asyncio.sleep(self.ENTRY_PRICE_POLLING_INTERVAL)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                self.logger.error(f"{self.hedge_pair.coin} Error while polling entry price.", exc_info=True)
+                await asyncio.sleep(10)
 
     def _compute_entry_price(self, position_size: Decimal, fills: List[dict]) -> Decimal:
         if position_size == 0:
@@ -272,9 +288,10 @@ class SubProcess:
             self._consume_main_process_msg_task = asyncio.create_task(self._consume_main_process_msg())
         if self._listen_for_ws_task is None:
             self._listen_for_ws_task = asyncio.create_task(self.exchange.ws_start_network())
-        asyncio.create_task(self._update_entry_price())
         if self._indicator_polling_loop_task is None:
             self._indicator_polling_loop_task = asyncio.create_task(self._indicator_polling_loop())
+        if self._entry_price_polling_loop_task is None:
+            self._entry_price_polling_loop_task = asyncio.create_task(self._entry_price_polling_loop())
         asyncio.create_task(self._init_update_future_expiry())
 
     def stop_network(self):
@@ -287,6 +304,9 @@ class SubProcess:
         if self._indicator_polling_loop_task is not None:
             self._indicator_polling_loop_task.cancel()
             self._indicator_polling_loop_task = None
+        if self._entry_price_polling_loop_task is not None:
+            self._entry_price_polling_loop_task.cancel()
+            self._entry_price_polling_loop_task = None
 
     async def _consume_main_process_msg(self):
         self._loop.add_reader(self.conn.fileno(), self._main_process_notify_event.set)
@@ -467,23 +487,27 @@ class SubProcess:
             spot_place_order = self._place_market_order_with_retry(self.hedge_pair.spot, Side.BUY, order_size)
             future_place_order = self._place_market_order_with_retry(self.hedge_pair.future, Side.SELL, order_size)
             spot_order_result, future_order_result = await asyncio.gather(spot_place_order, future_place_order, return_exceptions=True)
-            both_results_ok = True
+
             if isinstance(spot_order_result, Exception):
                 self.logger.error(f"Unexpected error while place {self.hedge_pair.spot} market order. Error message: {spot_order_result.with_traceback(None)}")
-                both_results_ok = False
-            if isinstance(future_order_result, Exception):
-                self.logger.error(f"Unexpected error while place {self.hedge_pair.future} market order. Error message: {future_order_result.with_traceback(None)}")
-                both_results_ok = False
-
-            if both_results_ok:
+                spot_result_ok = False
+            else:
                 spot_order_id = str(spot_order_result['id'])
                 if not self._ws_orders_events.get(spot_order_id):
                     self._ws_orders_events[spot_order_id] = asyncio.Event()
+                spot_order_msg = await self._wait_order(spot_order_id)
+                spot_result_ok = True
+            if isinstance(future_order_result, Exception):
+                self.logger.error(f"Unexpected error while place {self.hedge_pair.future} market order. Error message: {future_order_result.with_traceback(None)}")
+                future_result_ok = False
+            else:
                 future_order_id = str(future_order_result['id'])
                 if not self._ws_orders_events.get(future_order_id):
                     self._ws_orders_events[future_order_id] = asyncio.Event()
-                spot_order_msg, future_order_msg = await asyncio.gather(self._wait_order(spot_order_id), self._wait_order(future_order_id))
+                future_order_msg = await self._wait_order(future_order_id)
+                future_result_ok = True
 
+            if spot_result_ok and future_result_ok:
                 if spot_order_msg and future_order_msg:
                     # check filled size
                     if spot_order_msg.filled_size != future_order_msg.filled_size:
@@ -503,6 +527,7 @@ class SubProcess:
                         real_spot_notional_value = spot_order_msg.avg_fill_price * spot_order_msg.filled_size
                         self.conn.send(FtxFundOpenFilledMessage(request_id, fund_used, real_spot_notional_value))
                 
+            if spot_result_ok:
                 if spot_order_msg is None:
                     self.logger.warning(f"Order {spot_order_id} not found or not closed")
                 else:
@@ -514,6 +539,7 @@ class SubProcess:
                         self.spot_entry_price = (self.spot_entry_price * self.spot_position_size + spot_order_msg.avg_fill_price * spot_order_msg.filled_size) / spot_new_size
                         self.spot_position_size = spot_new_size
                 
+            if future_result_ok:
                 if future_order_msg is None:
                     self.logger.warning(f"Order {future_order_id} not found or not closed")
                 else:
@@ -670,23 +696,27 @@ class SubProcess:
         spot_place_order = self._place_market_order_with_retry(self.hedge_pair.spot, Side.SELL, order_size, reduce_only=True)
         future_place_order = self._place_market_order_with_retry(self.hedge_pair.future, Side.BUY, order_size, reduce_only=True)
         spot_order_result, future_order_result = await asyncio.gather(spot_place_order, future_place_order, return_exceptions=True)
-        both_results_ok = True
+
         if isinstance(spot_order_result, Exception):
             self.logger.error(f"Unexpected error while place {self.hedge_pair.spot} market order. Error message: {spot_order_result.with_traceback(None)}")
-            both_results_ok = False
-        if isinstance(future_order_result, Exception):
-            self.logger.error(f"Unexpected error while place {self.hedge_pair.future} market order. Error message: {future_order_result.with_traceback(None)}")
-            both_results_ok = False
-
-        if both_results_ok:
+            spot_result_ok = False
+        else:
             spot_order_id = str(spot_order_result['id'])
             if not self._ws_orders_events.get(spot_order_id):
                 self._ws_orders_events[spot_order_id] = asyncio.Event()
+            spot_order_msg = await self._wait_order(spot_order_id)
+            spot_result_ok = True
+        if isinstance(future_order_result, Exception):
+            self.logger.error(f"Unexpected error while place {self.hedge_pair.future} market order. Error message: {future_order_result.with_traceback(None)}")
+            future_result_ok = False
+        else:
             future_order_id = str(future_order_result['id'])
             if not self._ws_orders_events.get(future_order_id):
                 self._ws_orders_events[future_order_id] = asyncio.Event()
-            spot_order_msg, future_order_msg = await asyncio.gather(self._wait_order(spot_order_id), self._wait_order(future_order_id))
+            future_order_msg = await self._wait_order(future_order_id)
+            future_result_ok = True
 
+        if spot_result_ok and future_result_ok:
             if spot_order_msg and future_order_msg:
                 # check filled size
                 if spot_order_msg.filled_size != future_order_msg.filled_size:
@@ -708,6 +738,7 @@ class SubProcess:
 
             # TODO: inform main process fund release
 
+        if spot_result_ok:
             if spot_order_msg is None:
                 self.logger.warning(f"Order {spot_order_id} not found or not closed")
             else:
@@ -716,7 +747,8 @@ class SubProcess:
                 if spot_new_size == 0:
                     self.spot_entry_price = None
                 self.spot_position_size = spot_new_size
-            
+
+        if future_result_ok:
             if future_order_msg is None:
                 self.logger.warning(f"Order {future_order_id} not found or not closed")
             else:
@@ -733,7 +765,8 @@ class SubProcess:
         await self._future_expiry_ts_update_event.wait()
         while self.future_expiry_ts - time.time() > self.config.seconds_before_expiry_to_stop_open_position:
             try:
-                await self.open_position()
+                async with self._state_update_lock:
+                    await self.open_position()
                 await asyncio.sleep(0.2)
             except Exception:
                 self.logger.error(f"Unexpected error while open {self.hedge_pair.coin} position.", exc_info=True)
@@ -743,7 +776,8 @@ class SubProcess:
         await self._future_expiry_ts_update_event.wait()
         while self.future_expiry_ts - time.time()> self.config.seconds_before_expiry_to_stop_close_position:
             try:
-                await self.close_position()
+                async with self._state_update_lock:
+                    await self.close_position()
                 await asyncio.sleep(0.2)
             except Exception:
                 self.logger.error(f"Unexpected error while close {self.hedge_pair.coin} position.", exc_info=True)
