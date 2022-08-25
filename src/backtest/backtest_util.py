@@ -1,11 +1,15 @@
-from typing import List
-from datetime import datetime
-import pathlib
 import json
-import pandas as pd
+import pathlib
+from datetime import datetime
+from typing import List
+
 import matplotlib.pyplot as plt
 import matplotlib.transforms as transforms
-from src.backtest.ftx_data_types import CombinedModelHedgeType, HedgeTrade, HedgeType, LogState, CombinedModelHedgeTrade
+import pandas as pd
+
+from src.backtest.ftx_data_types import (CombinedModelHedgeTrade,
+                                         CombinedModelHedgeType, HedgeTrade,
+                                         HedgeType, LogState)
 
 
 def save_summary(logs: List[LogState], save_path: str) -> dict:
@@ -19,22 +23,23 @@ def save_summary(logs: List[LogState], save_path: str) -> dict:
         index.append(datetime.fromtimestamp(log.timestamp))
         net_deposit.append(log.net_deposit)
     net_deposit_seires = pd.Series(net_deposit, index)
-    avg_deposit = net_deposit_seires.resample('1s').last().fillna(method='ffill').mean()
+    avg_deposit = net_deposit_seires.resample("1s").last().fillna(method="ffill").mean()
     roi = profit / avg_deposit
     days = (logs[-1].timestamp - logs[0].timestamp) / 86400
     apr = roi / days * 365
-    summary = {
-        'avg_deposit': avg_deposit,
-        'profit': profit,
-        'roi': roi,
-        'apr': apr}
-    with path.open('w') as fp:
+    summary = {"avg_deposit": avg_deposit, "profit": profit, "roi": roi, "apr": apr}
+    with path.open("w") as fp:
         json.dump(summary, fp, indent=2)
     print(f"Save summary to {save_path}")
     return summary
 
 
-def plot_logs(logs: List[LogState], hedge_trades: List[HedgeTrade], save_path: str, to_show: bool = True):
+def plot_logs(
+    logs: List[LogState],
+    hedge_trades: List[HedgeTrade],
+    save_path: str,
+    to_show: bool = True,
+):
     path = pathlib.Path(save_path)
     if not path.exists():
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -69,17 +74,31 @@ def plot_logs(logs: List[LogState], hedge_trades: List[HedgeTrade], save_path: s
     profit_ax: plt.Axes = ax[2]
 
     basis_ax.plot(index, basis, alpha=0.8, lw=1)
-    offset = lambda p: transforms.ScaledTranslation(0, p/72., fig.dpi_scale_trans)
+    offset = lambda p: transforms.ScaledTranslation(0, p / 72.0, fig.dpi_scale_trans)
     trans = basis_ax.transData
-    basis_ax.scatter(trade_open_index, trade_open, c='r', marker='v', s=9, transform=trans + offset(5))
-    basis_ax.scatter(trade_close_index, trade_close, c='g', marker='^', s=9, transform=trans + offset(-5))
-    basis_ax.set_ylabel('basis')
+    basis_ax.scatter(
+        trade_open_index,
+        trade_open,
+        c="r",
+        marker="v",
+        s=9,
+        transform=trans + offset(5),
+    )
+    basis_ax.scatter(
+        trade_close_index,
+        trade_close,
+        c="g",
+        marker="^",
+        s=9,
+        transform=trans + offset(-5),
+    )
+    basis_ax.set_ylabel("basis")
 
     position_ax.plot(index, position)
-    position_ax.set_ylabel('position')
+    position_ax.set_ylabel("position")
 
     profit_ax.plot(index, profit)
-    profit_ax.set_ylabel('profit')
+    profit_ax.set_ylabel("profit")
 
     if to_show:
         plt.show()
@@ -89,7 +108,12 @@ def plot_logs(logs: List[LogState], hedge_trades: List[HedgeTrade], save_path: s
     plt.close(fig)
 
 
-def plot_combined_model_logs(logs: List[LogState], hedge_trades: List[CombinedModelHedgeTrade], save_path: str, to_show: bool = True):
+def plot_combined_model_logs(
+    logs: List[LogState],
+    hedge_trades: List[CombinedModelHedgeTrade],
+    save_path: str,
+    to_show: bool = True,
+):
     path = pathlib.Path(save_path)
     if not path.exists():
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -140,7 +164,9 @@ def plot_combined_model_logs(logs: List[LogState], hedge_trades: List[CombinedMo
             m2_close_index.append(datetime.fromtimestamp(trade.timestamp))
             m2_close.append(trade.basis)
         elif trade.hedge_type == CombinedModelHedgeType.ONE_OPEN_THE_OTHER_CLOSE:
-            one_open_the_other_close_index.append(datetime.fromtimestamp(trade.timestamp))
+            one_open_the_other_close_index.append(
+                datetime.fromtimestamp(trade.timestamp)
+            )
             one_open_the_other_close.append(trade.basis)
 
     fig, ax = plt.subplots(nrows=3, ncols=1, sharex=True, figsize=(12, 10))
@@ -150,23 +176,78 @@ def plot_combined_model_logs(logs: List[LogState], hedge_trades: List[CombinedMo
     profit_ax: plt.Axes = ax[2]
 
     basis_ax.plot(index, basis, alpha=0.8, lw=1)
-    offset = lambda p: transforms.ScaledTranslation(0, p/72., fig.dpi_scale_trans)
+    offset = lambda p: transforms.ScaledTranslation(0, p / 72.0, fig.dpi_scale_trans)
     trans = basis_ax.transData
-    basis_ax.scatter(both_open_index, both_open, c='darkgreen', marker='v', s=9, transform=trans + offset(5), label='both open')
-    basis_ax.scatter(m1_open_index, m1_open, c='cyan', marker='v', s=9, transform=trans + offset(5), label='m1 open')
-    basis_ax.scatter(m2_open_index, m2_open, c='dodgerblue', marker='v', s=9, transform=trans + offset(5), label='m2 open')
-    basis_ax.scatter(both_close_index, both_close, c='b', marker='^', s=9, transform=trans + offset(-5), label='both close')
-    basis_ax.scatter(m1_close_index, m1_close, c='orangered', marker='^', s=9, transform=trans + offset(-5), label='m1 close')
-    basis_ax.scatter(m2_close_index, m2_close, c='magenta', marker='^', s=9, transform=trans + offset(-5), label='m2 close')
-    basis_ax.scatter(one_open_the_other_close_index, one_open_the_other_close, c='b', marker='X', s=18, label='bad')
-    basis_ax.set_ylabel('basis')
+    basis_ax.scatter(
+        both_open_index,
+        both_open,
+        c="darkgreen",
+        marker="v",
+        s=9,
+        transform=trans + offset(5),
+        label="both open",
+    )
+    basis_ax.scatter(
+        m1_open_index,
+        m1_open,
+        c="cyan",
+        marker="v",
+        s=9,
+        transform=trans + offset(5),
+        label="m1 open",
+    )
+    basis_ax.scatter(
+        m2_open_index,
+        m2_open,
+        c="dodgerblue",
+        marker="v",
+        s=9,
+        transform=trans + offset(5),
+        label="m2 open",
+    )
+    basis_ax.scatter(
+        both_close_index,
+        both_close,
+        c="b",
+        marker="^",
+        s=9,
+        transform=trans + offset(-5),
+        label="both close",
+    )
+    basis_ax.scatter(
+        m1_close_index,
+        m1_close,
+        c="orangered",
+        marker="^",
+        s=9,
+        transform=trans + offset(-5),
+        label="m1 close",
+    )
+    basis_ax.scatter(
+        m2_close_index,
+        m2_close,
+        c="magenta",
+        marker="^",
+        s=9,
+        transform=trans + offset(-5),
+        label="m2 close",
+    )
+    basis_ax.scatter(
+        one_open_the_other_close_index,
+        one_open_the_other_close,
+        c="b",
+        marker="X",
+        s=18,
+        label="bad",
+    )
+    basis_ax.set_ylabel("basis")
     basis_ax.legend()
 
     position_ax.plot(index, position)
-    position_ax.set_ylabel('position')
+    position_ax.set_ylabel("position")
 
     profit_ax.plot(index, profit)
-    profit_ax.set_ylabel('profit')
+    profit_ax.set_ylabel("profit")
 
     if to_show:
         plt.show()
