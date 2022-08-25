@@ -21,6 +21,7 @@ log:
 indicator:
   name: 'macd'
   params:
+    kline_resolution: 3600  # Enum of (15, 60, 300, 900, 3600, 14400, 86400) in seconds
     fast_length: 12
     slow_length: 26
     signal_length: 9

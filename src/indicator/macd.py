@@ -15,6 +15,7 @@ class MACD(BaseIndicator):
     indicator:
         name: 'macd'
         params:
+            kline_resolution: 3600  # Enum of (15, 60, 300, 900, 3600, 14400, 86400) in seconds
             fast_length: 12
             slow_length: 26
             signal_length: 9
@@ -25,17 +26,14 @@ class MACD(BaseIndicator):
     def __init__(
         self,
         hedge_pair: FtxHedgePair,
+        kline_resolution: FtxCandleResolution,
         fast_length: int = 12,
         slow_length: int = 26,
         signal_length: int = 9,
         std_length: int = 20,
         std_mult: float = 1.0,
         ):
-
-        self._upper_threshold: Decimal = None
-        self._lower_threshold: Decimal = None
-        self.last_update_timestamp: float = 0.0
-
+        super().__init__(kline_resolution)
         self.hedge_pair = hedge_pair
         self.fast_length = fast_length
         self.slow_length = slow_length
@@ -46,14 +44,6 @@ class MACD(BaseIndicator):
         self.alpha_fast = 2 / (fast_length + 1)
         self.alpha_slow = 2 / (slow_length + 1)
         self.alpha_macd = 2 / (signal_length + 1)
-
-    @property
-    def upper_threshold(self) -> Decimal:
-        return self._upper_threshold
-
-    @property
-    def lower_threshold(self) -> Decimal:
-        return self._lower_threshold
 
     async def update_indicator_info(self):
         client = FtxExchange('', '')
@@ -93,7 +83,7 @@ class MACD(BaseIndicator):
 
         self._upper_threshold = Decimal(str(upper_threshold))
         self._lower_threshold = Decimal(str(lower_threshold))
-        self.last_update_timestamp = concat_df.index[-1].timestamp()
+        self._last_kline_start_timestamp = concat_df.index[-1].timestamp()
 
     def candles_to_df(self, candles: List[dict]) -> pd.DataFrame:
         df = pd.DataFrame.from_records(candles)
