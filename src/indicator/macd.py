@@ -47,7 +47,7 @@ class MACD(BaseIndicator):
 
     async def update_indicator_info(self):
         client = FtxExchange('', '')
-        resolution = FtxCandleResolution.ONE_HOUR
+        resolution = self._kline_resolution
         end_ts = (time.time() // resolution.value - 1) * resolution.value
         start_ts = end_ts - self.slow_length * resolution.value
         spot_candles = await client.get_candles(self.hedge_pair.spot, resolution, start_ts, end_ts)
