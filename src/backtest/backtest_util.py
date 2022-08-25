@@ -82,7 +82,7 @@ def plot_logs(logs: List[LogState], hedge_trades: List[HedgeTrade], save_path: s
     profit_ax.set_ylabel('profit')
 
     if to_show:
-        plt.show()    
+        plt.show()
 
     fig.savefig(save_path)
     print(f"Save plot to {save_path}")
@@ -169,7 +169,7 @@ def plot_combined_model_logs(logs: List[LogState], hedge_trades: List[CombinedMo
     profit_ax.set_ylabel('profit')
 
     if to_show:
-        plt.show()    
+        plt.show()
 
     fig.savefig(save_path)
     print(f"Save plot to {save_path}")

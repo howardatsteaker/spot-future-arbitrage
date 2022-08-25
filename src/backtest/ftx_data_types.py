@@ -242,3 +242,13 @@ class CombinedModelState(BaseState):
 
     def append_hedge_trade(self, timestamp: float, hedge_type: CombinedModelHedgeType, basis: Decimal):
         self.combined_model_hedge_trades.append(CombinedModelHedgeTrade(timestamp, hedge_type, basis))
+
+
+@dataclass
+class BackTestConfig():
+    fee_rate: Decimal
+    collateral_weight: Decimal
+    ts_to_stop_open: int
+    ts_to_expiry: int
+    expiration_price: Decimal
+    leverage: Decimal
