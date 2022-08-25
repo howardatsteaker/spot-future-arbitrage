@@ -20,6 +20,7 @@ from src.common import Config
 from src.exchange.ftx.ftx_client import FtxExchange
 from src.exchange.ftx.ftx_data_type import (
     Ftx_EWMA_InterestRate,
+    FtxCandleResolution,
     FtxCollateralWeight,
     FtxCollateralWeightMessage,
     FtxFeeRate,
@@ -50,8 +51,6 @@ class TickerNotifyType(Enum):
 
 
 class SubProcess:
-    INDICATOR_UPDATE_INTERVAL = 3600  # seconds
-    INDICATOR_UPDATE_TIME_SHIFT = 30  # seconds
 
     def __init__(self, hedge_pair: FtxHedgePair, config: Config, conn: Connection):
         self.hedge_pair = hedge_pair
@@ -83,7 +82,6 @@ class SubProcess:
         self.future_position_size: Decimal = Decimal(0)  # negative means short postion
 
         self.indicator = self._init_get_indicator()
-        self._last_indicator_update_ts: float = 0.0
 
         self.future_expiry_ts: float = None
         self._future_expiry_ts_update_event = asyncio.Event()
@@ -114,8 +112,8 @@ class SubProcess:
         if self.combined_trading_rule is None:
             self.logger.debug(f"{self.hedge_pair.coin} combined trading rule not ready")
             return False
-        if time.time() - self.indicator.last_update_timestamp > 7200:
-            self.logger.debug(f"{self.hedge_pair.coin} indicator delay and not ready")
+        if not self.indicator.ready:
+            self.logger.debug(f"{self.hedge_pair.coin} indicator not ready")
             return False
         return True
 
@@ -248,6 +246,7 @@ class SubProcess:
             params = self.config.indicator['params']
             return MACD(
                 self.hedge_pair,
+                kline_resolution=FtxCandleResolution.from_seconds(params['kline_resolution']),
                 fast_length=params['fast_length'],
                 slow_length=params['slow_length'],
                 signal_length=params['signal_length'],
@@ -257,6 +256,7 @@ class SubProcess:
             params = self.config.indicator['params']
             return Bollinger(
                 self.hedge_pair,
+                kline_resolution=FtxCandleResolution.from_seconds(params['kline_resolution']),
                 length = params['length'],
                 std_mult=params['std_mult'],)
         else:
@@ -338,25 +338,21 @@ class SubProcess:
     async def _indicator_polling_loop(self):
         while True:
             try:
-                now_ts = time.time()
-                if now_ts - self._last_indicator_update_ts > self.INDICATOR_UPDATE_INTERVAL:
+                if not self.indicator.ready:
                     await self.indicator.update_indicator_info()
                     up = self.indicator.upper_threshold
                     low = self.indicator.lower_threshold
-                    self._last_indicator_update_ts = time.time()
                     self.logger.info(f"{self.hedge_pair.coin} Indicator is updated successfully. UP: {up}, LOW: {low}")
-                curr_tick = now_ts // self.INDICATOR_UPDATE_INTERVAL * self.INDICATOR_UPDATE_INTERVAL
-                curr_tick_with_shift = curr_tick + self.INDICATOR_UPDATE_TIME_SHIFT
-                if curr_tick_with_shift > now_ts:
-                    wait_time = curr_tick_with_shift - now_ts
-                else:
-                    wait_time = curr_tick_with_shift + self.INDICATOR_UPDATE_INTERVAL - now_ts
+                now_ts = time.time()
+                resolution = self.indicator.kline_resolution.value
+                next_run_ts = self.indicator.last_kline_start_timestamp + 2 * resolution + 1
+                wait_time = max(0, next_run_ts - now_ts)  # should be none negative wait time
                 await asyncio.sleep(wait_time)
             except asyncio.CancelledError:
                 raise
             except Exception:
                 self.logger.error(f"{self.hedge_pair.coin} Error while update indicator.", exc_info=True)
-                await asyncio.sleep(self.INDICATOR_UPDATE_TIME_SHIFT)
+                await asyncio.sleep(10)
 
     async def wait_spot_ticker_notify(self):
         spot_cond = self.exchange.ticker_notify_conds.get(self.hedge_pair.spot)

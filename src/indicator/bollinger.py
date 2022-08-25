@@ -15,6 +15,7 @@ class Bollinger(BaseIndicator):
     indicator:
         name: 'bollinger'
         params:
+            resolution: 3600  # Enum of (15, 60, 300, 900, 3600, 14400, 86400) in seconds
             length: 20
             std_mult: 2.0
     """

@@ -15,6 +15,25 @@ class FtxCandleResolution(Enum):
     FOUR_HOURS = 14400
     ONE_DAY = 86400
 
+    @classmethod
+    def from_seconds(cls, seconds: int) -> FtxCandleResolution:
+        if seconds == 15:
+            return cls.FIFTEEN_SECONDS
+        elif seconds == 60:
+            return cls.ONE_MINUTE
+        elif seconds == 300:
+            return cls.FIVE_MINUTES
+        elif seconds == 900:
+            return cls.FIFTEEN_MINUTES
+        elif seconds == 3600:
+            return cls.ONE_HOUR
+        elif seconds == 14400:
+            return cls.FOUR_HOURS
+        elif seconds == 86400:
+            return cls.ONE_DAY
+        else:
+            raise ValueError("'seconds' must be one of (15, 60, 300, 900, 3600, 14400, 86400)")
+
 
 @dataclass
 class FtxTradingRule:
