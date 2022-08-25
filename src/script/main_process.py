@@ -284,14 +284,17 @@ class MainProcess:
         for position in positions:
             future = position["future"]
             coin = FtxHedgePair.future_to_coin(future)
+            spot = FtxHedgePair.future_to_spot(future)
             future_new_size = Decimal(str(position["netSize"]))
-            if future_new_size > -self.trading_rules[future].min_order_size:
-                continue
-            if (
-                balance_map.get(coin, Decimal(0))
-                >= self.trading_rules[future].min_order_size
-            ):
-                coins.append(coin)
+            if self.trading_rules.get(spot) and self.trading_rules.get(future):
+                min_order_size = max(
+                    self.trading_rules[spot].min_order_size,
+                    self.trading_rules[future].min_order_size,
+                )
+                if future_new_size > -min_order_size:
+                    continue
+                if balance_map.get(coin, Decimal(0)) >= min_order_size:
+                    coins.append(coin)
         return coins
 
     async def _interest_rate_polling_loop(self):
