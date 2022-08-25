@@ -427,7 +427,7 @@ class SubProcess:
             cost = spot_price + future_collateral_needed - spot_collateral_supplied + fee
             profit = basis - 2 * fee
 
-            if profit < 0:
+            if basis < self.config.open_fee_coverage_multiplier * fee:
                 return
 
             # get apr

@@ -47,6 +47,7 @@ class Config:
             seconds_before_expiry_to_stop_open_position: float,
             seconds_before_expiry_to_stop_close_position: float,
             release_mode: bool,
+            open_fee_coverage_multiplier: Decimal,
             whitelist: List[str],
             blacklist: List[str],):
         self.exchange=exchange
@@ -69,6 +70,7 @@ class Config:
         self.seconds_before_expiry_to_stop_open_position = seconds_before_expiry_to_stop_open_position
         self.seconds_before_expiry_to_stop_close_position = seconds_before_expiry_to_stop_close_position
         self.release_mode = release_mode
+        self.open_fee_coverage_multiplier = open_fee_coverage_multiplier
         self.whitelist = whitelist
         self.blacklist = blacklist
 
@@ -105,6 +107,7 @@ class Config:
             seconds_before_expiry_to_stop_open_position=data['strategy']['seconds_before_expiry_to_stop_open_position'],
             seconds_before_expiry_to_stop_close_position=data['strategy']['seconds_before_expiry_to_stop_close_position'],
             release_mode=data['strategy']['release_mode'],
+            open_fee_coverage_multiplier=Decimal(str(data['strategy']['open_fee_coverage_multiplier'])),
             whitelist=whitelist,
             blacklist=blacklist,
         )
