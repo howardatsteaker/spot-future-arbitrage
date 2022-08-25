@@ -1,6 +1,3 @@
-import asyncio
-
-
 class ExchangeError(Exception):
     __module__ = Exception.__module__
 

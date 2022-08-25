@@ -469,10 +469,10 @@ class SubProcess:
             spot_order_result, future_order_result = await asyncio.gather(spot_place_order, future_place_order, return_exceptions=True)
             both_results_ok = True
             if isinstance(spot_order_result, Exception):
-                self.logger.error(f"Unexpected error while place {self.hedge_pair.spot} market order.", exc_info=True)
+                self.logger.error(f"Unexpected error while place {self.hedge_pair.spot} market order. Error message: {spot_order_result.with_traceback(None)}")
                 both_results_ok = False
             if isinstance(future_order_result, Exception):
-                self.logger.error(f"Unexpected error while place {self.hedge_pair.future} market order.", exc_info=True)
+                self.logger.error(f"Unexpected error while place {self.hedge_pair.future} market order. Error message: {future_order_result.with_traceback(None)}")
                 both_results_ok = False
 
             if both_results_ok:
@@ -672,10 +672,10 @@ class SubProcess:
         spot_order_result, future_order_result = await asyncio.gather(spot_place_order, future_place_order, return_exceptions=True)
         both_results_ok = True
         if isinstance(spot_order_result, Exception):
-            self.logger.error(f"Unexpected error while place {self.hedge_pair.spot} market order.", exc_info=True)
+            self.logger.error(f"Unexpected error while place {self.hedge_pair.spot} market order. Error message: {spot_order_result.with_traceback(None)}")
             both_results_ok = False
         if isinstance(future_order_result, Exception):
-            self.logger.error(f"Unexpected error while place {self.hedge_pair.future} market order.", exc_info=True)
+            self.logger.error(f"Unexpected error while place {self.hedge_pair.future} market order. Error message: {future_order_result.with_traceback(None)}")
             both_results_ok = False
 
         if both_results_ok:
