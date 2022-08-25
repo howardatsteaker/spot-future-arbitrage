@@ -421,7 +421,7 @@ class SubProcess:
             elif type(msg) is FtxLeverageMessage:
                 self.leverage_info = msg.leverage
                 self.logger.debug(
-                    f"{self.hedge_pair.coin} Receive leverage message: {msg.leverage}X"
+                    f"{self.hedge_pair.coin} Receive leverage message: {msg.leverage}"
                 )
             elif type(msg) is FtxFundResponseMessage:
                 self._fund_manager_response_messages[msg.id] = msg
