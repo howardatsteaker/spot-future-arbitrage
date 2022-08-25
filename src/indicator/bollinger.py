@@ -22,31 +22,20 @@ class Bollinger(BaseIndicator):
     def __init__(
         self,
         hedge_pair: FtxHedgePair,
+        kline_resolution: FtxCandleResolution,
         length: int = 20,
         std_mult: float = 2.0,
         ):
-
-        self._upper_threshold: Decimal = None
-        self._lower_threshold: Decimal = None
-        self.last_update_timestamp: float = 0.0
-
+        super().__init__(kline_resolution)
         self.hedge_pair = hedge_pair
         self.length = length
         self.std_mult = std_mult
 
-    @property
-    def upper_threshold(self) -> Decimal:
-        return self._upper_threshold
-
-    @property
-    def lower_threshold(self) -> Decimal:
-        return self._lower_threshold
-
     async def update_indicator_info(self):
         client = FtxExchange('', '')
-        resolution = FtxCandleResolution.ONE_HOUR
+        resolution = self._kline_resolution
         end_ts = (time.time() // resolution.value - 1) * resolution.value
-        start_ts = end_ts - self.slow_length * resolution.value
+        start_ts = end_ts - self.length * resolution.value
         spot_candles = await client.get_candles(self.hedge_pair.spot, resolution, start_ts, end_ts)
         if len(spot_candles) == 0:
             return
@@ -75,7 +64,7 @@ class Bollinger(BaseIndicator):
 
         self._upper_threshold = Decimal(str(upper_threshold))
         self._lower_threshold = Decimal(str(lower_threshold))
-        self.last_update_timestamp = concat_df.index[-1].timestamp()
+        self._last_kline_start_timestamp = concat_df.index[-1].timestamp()
 
     def candles_to_df(self, candles: List[dict]) -> pd.DataFrame:
         df = pd.DataFrame.from_records(candles)
