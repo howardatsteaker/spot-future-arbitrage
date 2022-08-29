@@ -243,9 +243,7 @@ class MainProcess:
                 hedge_pairs[coin] = FtxHedgePair.from_future(symbol)
 
         # hedge pairs that have position but not in whitelist should be set to close only mode
-        coins_that_have_position = await self._get_coins_that_have_position(
-            symbol_set
-        )
+        coins_that_have_position = await self._get_coins_that_have_position(symbol_set)
 
         # handle whitelist
         if len(self.config.whitelist) == 0:

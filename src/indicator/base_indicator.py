@@ -35,7 +35,8 @@ class BaseIndicator:
             and self._lower_threshold is not None
             and self._last_kline_start_timestamp + self._kline_resolution.value
             <= now_ts
-            and now_ts < self._last_kline_start_timestamp + 2 * self._kline_resolution.value
+            and now_ts
+            < self._last_kline_start_timestamp + 2 * self._kline_resolution.value
         )
 
     async def update_indicator_info(self):
