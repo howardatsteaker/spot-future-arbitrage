@@ -242,6 +242,11 @@ class MainProcess:
                 coin = FtxHedgePair.future_to_coin(symbol)
                 hedge_pairs[coin] = FtxHedgePair.from_future(symbol)
 
+        # hedge pairs that have position but not in whitelist should be set to close only mode
+        coins_that_have_position = await self._get_coins_that_have_position(
+            symbol_set
+        )
+
         # handle whitelist
         if len(self.config.whitelist) == 0:
             self.hedge_pairs.update(hedge_pairs)
@@ -253,10 +258,6 @@ class MainProcess:
                     self.logger.warning(
                         f"{coin} in whitelist is not found in the market"
                     )
-            # hedge pairs that have position but not in whitelist should be set to close only mode
-            coins_that_have_position = await self._get_coins_that_have_position(
-                symbol_set
-            )
             for coin in coins_that_have_position:
                 if coin not in self.config.whitelist:
                     self.hedge_pairs[coin] = FtxHedgePair.from_coin(
@@ -265,7 +266,7 @@ class MainProcess:
 
         # handle blacklist
         for coin in self.config.blacklist:
-            if self.hedge_pairs.get(coin):
+            if self.hedge_pairs.get(coin) and coin in coins_that_have_position:
                 self.hedge_pairs[coin].trade_type = TradeType.CLOSE_ONLY
 
         async with self._hedge_pair_initialized_cond:
