@@ -8,17 +8,17 @@ import pandas as pd
 from src.backtest import backtest_util
 from src.backtest.ftx_data_types import (BackTestConfig, BaseState, HedgeType,
                                          MarketOrder, Side)
+from src.indicator.base_indicator import BaseIndicator
+from src.indicator.bollinger import BollingerParams
 
 
 def run_backtest(
-    trades_path: str,
-    spot_klines_path: str,
-    future_klines_path: str,
+    indicator: BaseIndicator,
     config: BackTestConfig,
 ):
-    trades = pd.read_parquet(trades_path)
-    spot_klines = pd.read_parquet(spot_klines_path)
-    future_klines = pd.read_parquet(future_klines_path)
+    trades = pd.read_parquet(indicator.get_trades_path())
+    spot_klines = pd.read_parquet(indicator.get_spot_klines_path())
+    future_klines = pd.read_parquet(indicator.get_future_klines_path())
 
     for boll_mult in np.arange(1, 3, 0.1):
         boll_mult = round(boll_mult, 1)
@@ -27,20 +27,11 @@ def run_backtest(
         if summary_path.exists():
             continue
 
-        # TODO make it into indicator config
-        config["bollinger_band_length"] = 20
-        config["bollinger_band_mult"] = boll_mult
+        params: BollingerParams = BollingerParams(length=20, std_mult=boll_mult)
 
-        # merge klines
-        spot_close = spot_klines["close"].rename("s_close")
-        future_close = future_klines["close"].rename("f_close")
-        concat_close = pd.concat([spot_close, future_close], axis=1)
-        concat_close["basis"] = concat_close["f_close"] - concat_close["s_close"]
-        roll = concat_close["basis"].rolling(config["bollinger_band_length"])
-        ma = roll.mean()
-        std = roll.std()
-        concat_close["bollinger_band_up"] = ma + config["bollinger_band_mult"] * std
-        concat_close["bollinger_band_low"] = ma - config["bollinger_band_mult"] * std
+        upper_threshold_df, lower_threshold_df = indicator.compute_thresholds(
+            spot_klines, future_klines, params, as_df=True
+        )
 
         # run backtest
         state = BaseState()
@@ -71,10 +62,11 @@ def run_backtest(
             dt_truncate = dt.replace(minute=0, second=0, microsecond=0) - timedelta(
                 hours=1
             )
-            if dt_truncate not in concat_close.index:
+            if dt_truncate not in upper_threshold_df.index:
                 continue
-            boll_up = concat_close.loc[dt_truncate]["bollinger_band_up"]
-            boll_low = concat_close.loc[dt_truncate]["bollinger_band_low"]
+
+            boll_up = upper_threshold_df[dt_truncate]
+            boll_low = lower_threshold_df[dt_truncate]
             if np.isnan(boll_low):
                 continue
 
@@ -188,18 +180,3 @@ def run_backtest(
         # plot
         save_path = f"local/backtest/bollinger_{boll_mult}/plot.jpg"
         backtest_util.plot_logs(logs, state.hedge_trades, save_path, to_show=False)
-
-
-if __name__ == "__main__":
-    trades_path = "local/merged_trades/BTC_0930/1660862041_1661237267.parquet"
-    spot_klines_path = "local/kline/BTC_USD/1660862041_1661237267_1H.parquet"
-    future_klines_path = "local/kline/BTC_0930/1660862041_1661237267_1H.parquet"
-    config = {
-        "fee_rate": Decimal("0.000228"),
-        "collateral_weight": Decimal("0.975"),
-        "ts_to_stop_open": 1759283200,  # 2022-6-23 03:00:00 UTC
-        "ts_to_expiry": 1759283200,  # 2022-6-24 03:00:00 UTC
-        "expiration_price": Decimal("21141.1"),
-        "leverage": Decimal("3"),
-    }
-    run_backtest(trades_path, spot_klines_path, future_klines_path, config=config)

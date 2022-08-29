@@ -35,7 +35,7 @@ from src.exchange.ftx.ftx_data_type import (Ftx_EWMA_InterestRate,
                                             TradeType)
 from src.exchange.ftx.ftx_error import ExchangeError, RateLimitExceeded
 from src.indicator.base_indicator import BaseIndicator
-from src.indicator.bollinger import Bollinger
+from src.indicator.bollinger import Bollinger, BollingerParams
 from src.indicator.macd import MACD
 
 
@@ -326,13 +326,15 @@ class SubProcess:
             )
         elif self.config.indicator["name"] == "bollinger":
             params = self.config.indicator["params"]
+            boll_params = BollingerParams(
+                length=params["length"], std_mult=params["std_mult"]
+            )
             return Bollinger(
                 self.hedge_pair,
                 kline_resolution=FtxCandleResolution.from_seconds(
                     params["kline_resolution"]
                 ),
-                length=params["length"],
-                std_mult=params["std_mult"],
+                params=boll_params,
             )
         else:
             raise NotImplementedError(

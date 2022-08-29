@@ -10,6 +10,7 @@ import pandas as pd
 from src.backtest.ftx_data_types import (CombinedModelHedgeTrade,
                                          CombinedModelHedgeType, HedgeTrade,
                                          HedgeType, LogState)
+from src.exchange.ftx.ftx_data_type import FtxCandleResolution
 
 
 def save_summary(logs: List[LogState], save_path: str) -> dict:
@@ -255,3 +256,20 @@ def plot_combined_model_logs(
     fig.savefig(save_path)
     print(f"Save plot to {save_path}")
     plt.close(fig)
+
+
+def resolution_to_dir_name(resolution: FtxCandleResolution):
+    if resolution == FtxCandleResolution.FIFTEEN_SECONDS:
+        return "15S"
+    elif resolution == FtxCandleResolution.ONE_MINUTE:
+        return "1M"
+    elif resolution == FtxCandleResolution.FIVE_MINUTES:
+        return "5M"
+    elif resolution == FtxCandleResolution.FIFTEEN_MINUTES:
+        return "15M"
+    elif resolution == FtxCandleResolution.ONE_HOUR:
+        return "1H"
+    elif resolution == FtxCandleResolution.FOUR_HOURS:
+        return "4H"
+    elif resolution == FtxCandleResolution.ONE_DAY:
+        return "1D"
