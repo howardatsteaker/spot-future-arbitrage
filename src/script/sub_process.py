@@ -29,7 +29,8 @@ from src.exchange.ftx.ftx_data_type import (Ftx_EWMA_InterestRate,
                                             FtxLeverageMessage,
                                             FtxOrderMessage, FtxOrderStatus,
                                             FtxOrderType, FtxTradingRule,
-                                            FtxTradingRuleMessage, Side)
+                                            FtxTradingRuleMessage, Side,
+                                            TradeType)
 from src.exchange.ftx.ftx_error import ExchangeError, RateLimitExceeded
 from src.indicator.base_indicator import BaseIndicator
 from src.indicator.bollinger import Bollinger
@@ -1029,6 +1030,12 @@ class SubProcess:
             self.future_expiry_ts - time.time()
             > self.config.seconds_before_expiry_to_stop_close_position
         ):
+            if self.hedge_pair.trade_type is TradeType.CLOSE_ONLY and (
+                self.spot_position_size < self.combined_trading_rule.min_order_size
+                or self.future_position_size
+                > -self.combined_trading_rule.min_order_size
+            ):
+                break
             try:
                 async with self._state_update_lock:
                     await self.close_position()
