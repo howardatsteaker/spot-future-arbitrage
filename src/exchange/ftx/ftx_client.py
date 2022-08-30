@@ -79,7 +79,11 @@ class FtxExchange:
         url = self.REST_URL + "/markets"
         async with client.get(url) as res:
             json_res = await res.json()
-        return json_res["result"]
+            if json_res["success"]:
+                return json_res["result"]
+            else:
+                error_msg = json_res["error"]
+                ftx_throw_exception(error_msg)
 
     async def get_candles(
         self,
@@ -102,7 +106,11 @@ class FtxExchange:
             )
             async with client.get(url) as res:
                 res_json = await res.json()
-                candles = res_json["result"]
+                if res_json["success"]:
+                    candles = res_json["result"]
+                else:
+                    error_msg = res_json["error"]
+                    ftx_throw_exception(error_msg)
             if len(candles) == 0:
                 break
             dedupted_candles = [c for c in candles if c["startTime"] not in time_set]
@@ -132,7 +140,11 @@ class FtxExchange:
             headers = self._gen_auth_header("GET", url)
             async with client.get(url, headers=headers) as res:
                 json_res = await res.json()
-            fills = json_res["result"]
+            if json_res["success"]:
+                fills = json_res["result"]
+            else:
+                error_msg = json_res["error"]
+                ftx_throw_exception(error_msg)
             if len(fills) == 0:
                 break
             all_fills.extend([fill for fill in fills if fill["id"] not in id_set])
@@ -150,7 +162,11 @@ class FtxExchange:
         headers = self._gen_auth_header("GET", url)
         async with client.get(url, headers=headers) as res:
             json_res = await res.json()
-        return json_res["result"]
+            if json_res["success"]:
+                return json_res["result"]
+            else:
+                error_msg = json_res["error"]
+                ftx_throw_exception(error_msg)
 
     async def set_leverage(self, leverage: int):
         client = self._get_rest_client()
@@ -159,7 +175,9 @@ class FtxExchange:
         headers = self._gen_auth_header("POST", url, body=data)
         async with client.post(url, headers=headers, json=data) as res:
             json_res = await res.json()
-            assert json_res["success"], "ftx set_leverage was not success"
+            if not json_res["success"]:
+                error_msg = json_res["error"]
+                ftx_throw_exception(error_msg)
 
     async def get_spot_margin_history(
         self, start_time: float = None, end_time: float = None
@@ -174,7 +192,11 @@ class FtxExchange:
         headers = self._gen_auth_header("GET", url)
         async with client.get(url, headers=headers, params=data) as res:
             json_res = await res.json()
-        return json_res["result"]
+            if json_res["success"]:
+                return json_res["result"]
+            else:
+                error_msg = json_res["error"]
+                ftx_throw_exception(error_msg)
 
     async def get_full_spot_margin_history(
         self, start_time: float, end_time: float
@@ -197,7 +219,11 @@ class FtxExchange:
         headers = self._gen_auth_header("GET", url)
         async with client.get(url, headers=headers) as res:
             json_res = await res.json()
-        return json_res["result"]
+            if json_res["success"]:
+                return json_res["result"]
+            else:
+                error_msg = json_res["error"]
+                ftx_throw_exception(error_msg)
 
     async def place_order(
         self,
@@ -317,7 +343,10 @@ class FtxExchange:
                 self.logger().info(f"{res_json['result']}, order id: {order_id}")
                 return True
             else:
-                self.logger().error(f"Fail to cancel order: {order_id}")
+                error_msg = res_json["error"]
+                self.logger().error(
+                    f"Fail to cancel order: {order_id}. Error msg: {error_msg}"
+                )
                 return False
 
     async def get_fills_since_last_flat(
@@ -343,7 +372,11 @@ class FtxExchange:
                 headers = self._gen_auth_header("GET", url)
                 async with client.get(url, headers=headers) as res:
                     json_res = await res.json()
-                fills = json_res["result"]
+                if json_res["success"]:
+                    fills = json_res["result"]
+                else:
+                    error_msg = json_res["error"]
+                    ftx_throw_exception(error_msg)
                 dedup_fills = [f for f in fills if f["id"] not in id_set]
                 if len(dedup_fills) == 0:
                     break
@@ -390,7 +423,11 @@ class FtxExchange:
         headers = self._gen_auth_header("GET", url)
         async with client.get(url, headers=headers) as res:
             json_res = await res.json()
-        return json_res["result"]
+        if json_res["success"]:
+            return json_res["result"]
+        else:
+            error_msg = json_res["error"]
+            ftx_throw_exception(error_msg)
 
     async def get_future(self, symbol: str):
         client = self._get_rest_client()
@@ -398,7 +435,11 @@ class FtxExchange:
         headers = self._gen_auth_header("GET", url)
         async with client.get(url, headers=headers) as res:
             json_res = await res.json()
-        return json_res["result"]
+        if json_res["success"]:
+            return json_res["result"]
+        else:
+            error_msg = json_res["error"]
+            ftx_throw_exception(error_msg)
 
     async def get_balances(self):
         client = self._get_rest_client()
@@ -406,7 +447,11 @@ class FtxExchange:
         headers = self._gen_auth_header("GET", url)
         async with client.get(url, headers=headers) as res:
             json_res = await res.json()
-        return json_res["result"]
+        if json_res["success"]:
+            return json_res["result"]
+        else:
+            error_msg = json_res["error"]
+            ftx_throw_exception(error_msg)
 
     async def get_order(self, order_id: str) -> dict:
         client = self._get_rest_client()
@@ -414,7 +459,11 @@ class FtxExchange:
         headers = self._gen_auth_header("GET", url)
         async with client.get(url, headers=headers) as res:
             json_res = await res.json()
-        return json_res["result"]
+        if json_res["success"]:
+            return json_res["result"]
+        else:
+            error_msg = json_res["error"]
+            ftx_throw_exception(error_msg)
 
     def ws_register_order_channel(self):
         self._to_subscribe_order_channel = True
