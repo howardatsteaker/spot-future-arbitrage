@@ -4,7 +4,6 @@ import multiprocessing as mp
 import pathlib
 import re
 import time
-from concurrent.futures import Future, ProcessPoolExecutor
 from decimal import Decimal
 from multiprocessing.connection import Connection
 from typing import Dict, List, Tuple
@@ -38,6 +37,7 @@ class MainProcess:
     COLLATERAL_WEIGHT_POLLING_INTERVAL = 300
     ACCOUNT_INFO_POLLING_INTERVAL = 3600
     FUND_MANAGER_POLLING_INTERVAL = 3
+    RELEASE_DEAD_SUB_PROCESS_INTERVAL = 300
 
     def __init__(self, config: Config):
         self.config: Config = config
@@ -65,9 +65,8 @@ class MainProcess:
             # Sub processes
             self._hedge_pair_initialized_cond = asyncio.Condition()
             self._loop = asyncio.get_event_loop()
-            self._executor = ProcessPoolExecutor()
             self._connections: Dict[str, Tuple[Connection, Connection]] = {}
-            self._sub_process_futures: Dict[str, Future] = {}
+            self._sub_processes: Dict[str, mp.Process] = {}
             self._sub_process_notify_events: Dict[str, asyncio.Event] = {}
 
             # tasks
@@ -81,6 +80,7 @@ class MainProcess:
             self._listen_ws_orders_task: asyncio.Task = None
             self._account_info_polling_task: asyncio.Task = None
             self._fund_manager_polling_task: asyncio.Task = None
+            self._release_dead_sub_process_loop_task: asyncio.Task = None
 
             # websocket
             self.exchange.ws_register_order_channel()
@@ -163,6 +163,10 @@ class MainProcess:
             )
         if self._listen_ws_orders_task is None:
             self._listen_ws_orders_task = asyncio.create_task(self._listen_ws_orders())
+        if self._release_dead_sub_process_loop_task is None:
+            self._release_dead_sub_process_loop_task = asyncio.create_task(
+                self._release_dead_sub_process_loop()
+            )
 
     def stop_network(self):
         if self._market_status_polling_task is not None:
@@ -192,6 +196,9 @@ class MainProcess:
         if self._listen_ws_orders_task is not None:
             self._listen_ws_orders_task.cancel()
             self._listen_ws_orders_task = None
+        if self._release_dead_sub_process_loop_task is not None:
+            self._release_dead_sub_process_loop_task.cancel()
+            self._release_dead_sub_process_loop_task = None
         self._stop_all_sub_process_listen_tasks()
         self._stop_all_sub_processes()
 
@@ -264,8 +271,11 @@ class MainProcess:
 
         # handle blacklist
         for coin in self.config.blacklist:
-            if self.hedge_pairs.get(coin) and coin in coins_that_have_position:
-                self.hedge_pairs[coin].trade_type = TradeType.CLOSE_ONLY
+            if self.hedge_pairs.get(coin):
+                if coin in coins_that_have_position:
+                    self.hedge_pairs[coin].trade_type = TradeType.CLOSE_ONLY
+                else:
+                    del self.hedge_pairs[coin]
 
         async with self._hedge_pair_initialized_cond:
             self._hedge_pair_initialized_cond.notify_all()
@@ -436,19 +446,20 @@ class MainProcess:
                 self.logger.debug("account info ready!")
 
                 for coin, hedge_pair in self.hedge_pairs.items():
-                    if self._sub_process_futures.get(coin) is None:
-                        # build pipe connection, future, and sub process listener
+                    if self._sub_processes.get(coin) is None:
+                        # build pipe connection
                         conn1, conn2 = mp.Pipe(duplex=True)
                         self._connections[hedge_pair.coin] = (conn1, conn2)
                         self._sub_process_notify_events[coin] = asyncio.Event()
-                        sub_process_future = self._loop.run_in_executor(
-                            self._executor,
-                            run_sub_process,
-                            hedge_pair,
-                            self.config,
-                            conn2,
+                        # spawn sub process
+                        sub_process = mp.Process(
+                            target=run_sub_process,
+                            args=(hedge_pair, self.config, conn2),
+                            daemon=True,
                         )
-                        self._sub_process_futures[coin] = sub_process_future
+                        sub_process.start()
+                        self._sub_processes[coin] = sub_process
+                        # create sub process listening task
                         self._sub_process_listen_tasks[coin] = asyncio.create_task(
                             self._listen_sub_process_msg(coin)
                         )
@@ -487,15 +498,40 @@ class MainProcess:
                     f"Unexpected error while spawn new sub process. {e}", exc_info=True
                 )
 
+    async def _release_dead_sub_process_loop(self):
+        while True:
+            try:
+                for coin, process in self._sub_processes.items():
+                    if not process.is_alive():
+                        # release process resource
+                        process.join()
+                        process.close()
+                        del self._sub_processes[coin]
+                        # release PIPE connection resource
+                        self._connections[coin][0].close()
+                        self._connections[coin][1].close()
+                        del self._connections[coin]
+                        self.logger.info(f"Close {coin} sub process")
+                await asyncio.sleep(self.RELEASE_DEAD_SUB_PROCESS_INTERVAL)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                self.logger.error(
+                    "Unexpected error while release dead sub process.", exc_info=True
+                )
+
     def _stop_all_sub_processes(self):
-        for coin, task in self._sub_process_futures.items():
-            task.cancel()
-            del self._sub_process_futures[coin]
+        for coin, process in self._sub_processes.items():
+            # release process resource
+            process.terminate()
+            process.join()
+            process.close()
+            del self._sub_processes[coin]
+            # release PIPE connection resource
             self._connections[coin][0].close()
             self._connections[coin][1].close()
             del self._connections[coin]
-            self.logger.debug(f"Close sub process. Coin: {coin}")
-        self._executor.shutdown()
+            self.logger.info(f"Close {coin} sub process")
 
     async def _listen_sub_process_msg(self, coin: str):
         conn = self._connections[coin][0]
@@ -573,9 +609,7 @@ class MainProcess:
         self.start_network()
         try:
             while True:
-                # if self.ready:
-                #     pass
-                await asyncio.sleep(1)
+                await asyncio.sleep(600)
         except KeyboardInterrupt:
             self.stop_network()
             await self.exchange.close()

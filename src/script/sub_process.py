@@ -1,12 +1,14 @@
 import asyncio
 import logging
 import pathlib
+import sys
 import time
 import uuid
 from dataclasses import dataclass
 from decimal import Decimal
 from enum import Enum
 from multiprocessing.connection import Connection
+from signal import SIGTERM, signal
 from typing import Dict, List
 
 import dateutil.parser
@@ -440,7 +442,8 @@ class SubProcess:
                 self._ws_orders[order_id] = msg
                 if not self._ws_orders_events.get(order_id):
                     self._ws_orders_events[order_id] = asyncio.Event()
-                self._ws_orders_events[order_id].set()
+                if msg.status == FtxOrderStatus.CLOSED:
+                    self._ws_orders_events[order_id].set()
             else:
                 self.logger.warning(
                     f"{self.hedge_pair.coin} receive unknown message: {msg}"
@@ -720,23 +723,17 @@ class SubProcess:
                         self.future_position_size = future_new_size
 
     async def _wait_order(self, order_id: str, timeout: float = 3.0) -> FtxOrderMessage:
-        t0 = time.time()
         event = self._ws_orders_events.get(order_id)
         if event is not None:
             try:
                 await asyncio.wait_for(event.wait(), timeout)
             except asyncio.TimeoutError:
-                self.logger.warning(f"Wait order {order_id} event timeout: {timeout} s")
-            while True:
+                self.logger.warning(
+                    f"Wait order {order_id} event timeout: {timeout}s, try rest api get order"
+                )
+            else:
                 order_msg = self._ws_orders[order_id]
-                if order_msg.status == FtxOrderStatus.CLOSED:
-                    return order_msg
-                if time.time() - t0 > timeout:
-                    self.logger.warning(
-                        f"Order {order_id} event is set, but timeout with order not closed."
-                    )
-                    break
-                await asyncio.sleep(0.1)
+                return order_msg
         # try rest api
         data = await self.exchange.get_order(order_id)
         order_msg = FtxOrderMessage(
@@ -1056,10 +1053,19 @@ class SubProcess:
         except KeyboardInterrupt:
             await self.exchange.close()
 
+    def signal_terminate(self, signum, frame):
+        self.logger.info(
+            f"Receive SIGTERM signal, try to exit {self.hedge_pair.coin} sub process"
+        )
+        self.stop_network()
+        time.sleep(2)  # wait all tasks cancel
+        sys.exit(0)
+
 
 def run_sub_process(hedge_pair: FtxHedgePair, config: Config, conn: Connection):
     asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
     sub_process = SubProcess(hedge_pair, config, conn)
-    sub_process.logger.debug(f"start to run {hedge_pair.coin} process")
+    sub_process.logger.info(f"start to run {hedge_pair.coin} process")
+    signal(SIGTERM, sub_process.signal_terminate)
     loop = asyncio.get_event_loop()
     loop.run_until_complete(sub_process.run())
