@@ -11,7 +11,7 @@ from requests import Request
 
 from src.exchange.ftx.ftx_data_type import (FtxCandleResolution, FtxOrderType,
                                             FtxTicker, Side)
-from src.exchange.ftx.ftx_error import ExchangeError, ftx_throw_exception
+from src.exchange.ftx.ftx_error import ftx_throw_exception
 
 
 class FtxExchange:
