@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import multiprocessing as mp
+import os
 import pathlib
 import re
 import time
@@ -272,8 +273,11 @@ class MainProcess:
 
         # handle blacklist
         for coin in self.config.blacklist:
-            if self.hedge_pairs.get(coin) and coin in coins_that_have_position:
-                self.hedge_pairs[coin].trade_type = TradeType.CLOSE_ONLY
+            if self.hedge_pairs.get(coin):
+                if coin in coins_that_have_position:
+                    self.hedge_pairs[coin].trade_type = TradeType.CLOSE_ONLY
+                else:
+                    del self.hedge_pairs[coin]
 
         async with self._hedge_pair_initialized_cond:
             self._hedge_pair_initialized_cond.notify_all()
