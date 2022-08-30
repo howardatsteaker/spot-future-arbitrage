@@ -1,12 +1,14 @@
 import asyncio
 import logging
 import pathlib
+import sys
 import time
 import uuid
 from dataclasses import dataclass
 from decimal import Decimal
 from enum import Enum
 from multiprocessing.connection import Connection
+from signal import SIGTERM, signal
 from typing import Dict, List
 
 import dateutil.parser
@@ -1056,10 +1058,19 @@ class SubProcess:
         except KeyboardInterrupt:
             await self.exchange.close()
 
+    def signal_terminate(self, signum, frame):
+        self.logger.info(
+            f"Receive SIGTERM signal, try to exit {self.hedge_pair.coin} sub process"
+        )
+        self.stop_network()
+        time.sleep(2)  # wait all tasks cancel
+        sys.exit(0)
+
 
 def run_sub_process(hedge_pair: FtxHedgePair, config: Config, conn: Connection):
     asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
     sub_process = SubProcess(hedge_pair, config, conn)
-    sub_process.logger.debug(f"start to run {hedge_pair.coin} process")
+    sub_process.logger.info(f"start to run {hedge_pair.coin} process")
+    signal(SIGTERM, sub_process.signal_terminate)
     loop = asyncio.get_event_loop()
     loop.run_until_complete(sub_process.run())
