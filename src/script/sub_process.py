@@ -525,7 +525,11 @@ class SubProcess:
 
             # get expected profit, cost, fee, etc...
             future_price = future_ticker.bid
+            if future_price is None:
+                return
             spot_price = spot_ticker.ask
+            if spot_price is None:
+                return
             basis = future_price - spot_price
             future_collateral_needed = future_price / self.leverage_info.max_leverage
             spot_collateral_supplied = spot_price * self.collateral_weight.weight
@@ -863,8 +867,14 @@ class SubProcess:
 
         spot_price = spot_ticker.bid
         spot_size = spot_ticker.bid_size
+        if spot_price is None:
+            return
+
         future_price = future_ticker.ask
         future_size = future_ticker.ask_size
+        if future_price is None:
+            return
+
         close_basis = future_price - spot_price
 
         to_close = False
