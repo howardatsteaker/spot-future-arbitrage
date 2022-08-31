@@ -521,8 +521,8 @@ class FtxExchange:
                             ):
                                 data = msg_json["data"]
                                 market = msg_json["market"]
-                                await self._ticker_notify_all(market)
                                 self.tickers[market] = FtxTicker.ws_entry(market, data)
+                                await self._ticker_notify_all(market)
                             elif (
                                 msg_json.get("type") == "update"
                                 and msg_json.get("channel") == "orders"
