@@ -1,9 +1,11 @@
 import time
 from dataclasses import dataclass
+from datetime import datetime
 from decimal import Decimal
 from typing import List
 
 import dateutil.parser
+import numpy as np
 import pandas as pd
 
 from src.backtest.backtest_util import resolution_to_dir_name
@@ -118,29 +120,43 @@ class BollingerBacktest(Bollinger):
         backtest_config: BackTestConfig,
     ):
         super().__init__(hedge_pair, kline_resolution)
-        self.backtest_config = backtest_config
+        self.config = backtest_config
+
+    def generate_params(self) -> list[BollingerParams]:
+        params = []
+        for boll_mult in np.arange(1, 3, 0.1):
+            boll_mult = round(boll_mult, 1)
+            params.append(BollingerParams(length=20, std_mult=boll_mult))
+        return params
+
+    def get_save_path(self) -> str:
+        from_datatime = datetime.fromtimestamp(self.config.start_timestamp)
+        from_date_str = from_datatime.strftime("%Y%m%d")
+        to_datatime = datetime.fromtimestamp(self.config.end_timestamp)
+        to_data_str = to_datatime.strftime("%Y%m%d")
+        return f"local/backtest/bollinger_{from_date_str}_{to_data_str}"
 
     def get_trades_path(self):
         return (
-            self.backtest_config.save_dir
+            self.config.save_dir
             + "merged_trades/"
             + FtxHedgePair.to_dir_name(self.hedge_pair.future)
             + "/"
-            + str(self.backtest_config.start_timestamp)
+            + str(self.config.start_timestamp)
             + "_"
-            + str(self.backtest_config.end_timestamp)
+            + str(self.config.end_timestamp)
             + ".parquet"
         )
 
     def get_spot_klines_path(self):
         return (
-            self.backtest_config.save_dir
+            self.config.save_dir
             + "kline/"
             + FtxHedgePair.to_dir_name(self.hedge_pair.spot)
             + "/"
-            + str(self.backtest_config.start_timestamp)
+            + str(self.config.start_timestamp)
             + "_"
-            + str(self.backtest_config.end_timestamp)
+            + str(self.config.end_timestamp)
             + "_"
             + str(resolution_to_dir_name(self.kline_resolution))
             + ".parquet"
@@ -148,13 +164,13 @@ class BollingerBacktest(Bollinger):
 
     def get_future_klines_path(self):
         return (
-            self.backtest_config.save_dir
+            self.config.save_dir
             + "kline/"
             + FtxHedgePair.to_dir_name(self.hedge_pair.future)
             + "/"
-            + str(self.backtest_config.start_timestamp)
+            + str(self.config.start_timestamp)
             + "_"
-            + str(self.backtest_config.end_timestamp)
+            + str(self.config.end_timestamp)
             + "_"
             + str(resolution_to_dir_name(self.kline_resolution))
             + ".parquet"

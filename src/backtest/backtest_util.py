@@ -13,10 +13,7 @@ from src.backtest.ftx_data_types import (CombinedModelHedgeTrade,
 from src.exchange.ftx.ftx_data_type import FtxCandleResolution
 
 
-def save_summary(logs: List[LogState], save_path: str) -> dict:
-    path = pathlib.Path(save_path)
-    if not path.exists():
-        path.parent.mkdir(parents=True, exist_ok=True)
+def logs_to_summary(logs: List[LogState]) -> dict:
     profit = float(logs[-1].profit)
     index = []
     net_deposit = []
@@ -28,7 +25,14 @@ def save_summary(logs: List[LogState], save_path: str) -> dict:
     roi = profit / avg_deposit
     days = (logs[-1].timestamp - logs[0].timestamp) / 86400
     apr = roi / days * 365
-    summary = {"avg_deposit": avg_deposit, "profit": profit, "roi": roi, "apr": apr}
+    return {"avg_deposit": avg_deposit, "profit": profit, "roi": roi, "apr": apr}
+
+
+def save_summary(summary: dict, save_path: str) -> dict:
+    path = pathlib.Path(save_path)
+    if not path.exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
+    # summary = logs_to_summary(logs)
     with path.open("w") as fp:
         json.dump(summary, fp, indent=2)
     print(f"Save summary to {save_path}")

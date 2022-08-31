@@ -104,7 +104,7 @@ def main():
     )
 
     print("running backtest...")
-    run_backtest(indicator, config=asdict(config))
+    run_backtest(indicator)
 
 
 if __name__ == "__main__":

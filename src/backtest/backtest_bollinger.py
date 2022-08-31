@@ -1,35 +1,35 @@
 import pathlib
+from dataclasses import asdict
 from datetime import timedelta
 from decimal import Decimal
+from os.path import exists
 
 import numpy as np
 import pandas as pd
 
 from src.backtest import backtest_util
-from src.backtest.ftx_data_types import (BackTestConfig, BaseState, HedgeType,
-                                         MarketOrder, Side)
+from src.backtest.ftx_data_types import BaseState, HedgeType, MarketOrder, Side
 from src.indicator.base_indicator import BaseIndicator
-from src.indicator.bollinger import BollingerParams
 
 
-def run_backtest(
-    indicator: BaseIndicator,
-    config: BackTestConfig,
-):
-    trades = pd.read_parquet(indicator.get_trades_path())
-    spot_klines = pd.read_parquet(indicator.get_spot_klines_path())
-    future_klines = pd.read_parquet(indicator.get_future_klines_path())
+def run_backtest(backtest_indicator: BaseIndicator):
+    trades = pd.read_parquet(backtest_indicator.get_trades_path())
+    spot_klines = pd.read_parquet(backtest_indicator.get_spot_klines_path())
+    future_klines = pd.read_parquet(backtest_indicator.get_future_klines_path())
 
-    for boll_mult in np.arange(1, 3, 0.1):
-        boll_mult = round(boll_mult, 1)
-        save_path = pathlib.Path(f"local/backtest/bollinger_{boll_mult}")
-        summary_path = save_path / "summary.json"
-        if summary_path.exists():
-            continue
+    save_path = backtest_indicator.get_save_path()
+    save_path_obj = pathlib.Path(save_path)
+    summary_path_obj = save_path_obj / "summary.json"
+    if summary_path_obj.exists():
+        print(f"summary file {summary_path_obj} exist")
+        return
 
-        params: BollingerParams = BollingerParams(length=20, std_mult=boll_mult)
+    summary_list = []
+    index = 0
+    for params in backtest_indicator.generate_params():
+        print(f"params: {params}")
 
-        upper_threshold_df, lower_threshold_df = indicator.compute_thresholds(
+        upper_threshold_df, lower_threshold_df = backtest_indicator.compute_thresholds(
             spot_klines, future_klines, params, as_df=True
         )
 
@@ -55,7 +55,7 @@ def run_backtest(
             state.basis = basis
 
             # expiry liquidation
-            if ts >= config["ts_to_expiry"]:
+            if ts >= backtest_indicator.config.ts_to_expiry:
                 break
 
             # indicator ready
@@ -74,7 +74,7 @@ def run_backtest(
             if (
                 future_side == "SELL"
                 and basis > boll_up
-                and ts < config["ts_to_stop_open"]
+                and ts < backtest_indicator.config.ts_to_stop_open
             ):
                 spot_market_order = MarketOrder(
                     symbol="spot",
@@ -82,7 +82,7 @@ def run_backtest(
                     price=spot_price,
                     size=max_available_size,
                     create_timestamp=ts,
-                    fee_rate=config["fee_rate"],
+                    fee_rate=backtest_indicator.config.fee_rate,
                 )
                 future_market_order = MarketOrder(
                     symbol="future",
@@ -90,7 +90,7 @@ def run_backtest(
                     price=future_price,
                     size=max_available_size,
                     create_timestamp=ts,
-                    fee_rate=config["fee_rate"],
+                    fee_rate=backtest_indicator.config.fee_rate,
                 )
                 fee = future_market_order.fee + spot_market_order.fee
                 expected_return = (
@@ -102,8 +102,8 @@ def run_backtest(
                     state.open_position(
                         spot_market_order,
                         future_market_order,
-                        config["collateral_weight"],
-                        config["leverage"],
+                        backtest_indicator.config.collateral_weight,
+                        backtest_indicator.config.leverage,
                     )
                     state.append_hedge_trade(ts, HedgeType.OPEN, basis)
 
@@ -122,7 +122,7 @@ def run_backtest(
                         price=spot_price,
                         size=close_size,
                         create_timestamp=ts,
-                        fee_rate=config["fee_rate"],
+                        fee_rate=backtest_indicator.config.fee_rate,
                     )
                     future_market_order = MarketOrder(
                         symbol="future",
@@ -130,13 +130,13 @@ def run_backtest(
                         price=future_price,
                         size=close_size,
                         create_timestamp=ts,
-                        fee_rate=config["fee_rate"],
+                        fee_rate=backtest_indicator.config.fee_rate,
                     )
                     state.close_position(
                         spot_market_order,
                         future_market_order,
-                        config["collateral_weight"],
-                        config["leverage"],
+                        backtest_indicator.config.collateral_weight,
+                        backtest_indicator.config.leverage,
                     )
                     state.append_hedge_trade(ts, HedgeType.CLOSE, basis)
 
@@ -149,34 +149,46 @@ def run_backtest(
             spot_market_order = MarketOrder(
                 symbol="spot",
                 side=Side.SELL,
-                price=config["expiration_price"],
+                price=backtest_indicator.config.expiration_price,
                 size=liquidation_size,
-                create_timestamp=config["ts_to_expiry"],
-                fee_rate=config["fee_rate"],
+                create_timestamp=backtest_indicator.config.ts_to_expiry,
+                fee_rate=backtest_indicator.config.fee_rate,
             )
             future_market_order = MarketOrder(
                 symbol="future",
                 side=Side.BUY,
-                price=config["expiration_price"],
+                price=backtest_indicator.config.expiration_price,
                 size=liquidation_size,
-                create_timestamp=config["ts_to_expiry"],
-                fee_rate=config["fee_rate"],
+                create_timestamp=backtest_indicator.config.ts_to_expiry,
+                fee_rate=backtest_indicator.config.fee_rate,
             )
             state.close_position(
                 spot_market_order,
                 future_market_order,
-                config["collateral_weight"],
-                config["leverage"],
+                backtest_indicator.config.collateral_weight,
+                backtest_indicator.config.leverage,
             )
             state.append_hedge_trade(
-                config["ts_to_expiry"], HedgeType.CLOSE, Decimal(0)
+                backtest_indicator.config.ts_to_expiry, HedgeType.CLOSE, Decimal(0)
             )
-            logs.append(state.to_log_state(config["ts_to_expiry"]))
+            logs.append(state.to_log_state(backtest_indicator.config.ts_to_expiry))
 
         # save summary
-        save_path = f"local/backtest/bollinger_{boll_mult}/summary.json"
-        backtest_util.save_summary(logs, save_path)
+        summary_dict = backtest_util.logs_to_summary(logs)
+        summary_dict["index"] = index
+        summary_dict["params"] = asdict(params)
+        summary_list.append(summary_dict)
 
-        # plot
-        save_path = f"local/backtest/bollinger_{boll_mult}/plot.jpg"
-        backtest_util.plot_logs(logs, state.hedge_trades, save_path, to_show=False)
+        # plot if not exist
+        plot_path = f"{save_path}/plot_{str(index)}.jpg"
+        if not exists(plot_path):
+            backtest_util.plot_logs(logs, state.hedge_trades, plot_path, to_show=False)
+
+        index += 1
+
+    summary_path = f"{save_path}/summary.json"
+    result_dict = {
+        # can put other info
+        "results": summary_list,
+    }
+    backtest_util.save_summary(result_dict, summary_path)
