@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from decimal import Decimal
 from enum import Enum
 
+from src.common import to_decimal_or_none
+
 
 class FtxCandleResolution(Enum):
     FIFTEEN_SECONDS = 15
@@ -250,11 +252,11 @@ class FtxTicker:
     def ws_entry(cls, symbol: str, ticker_info: dict) -> FtxTicker:
         return cls(
             symbol=symbol,
-            bid=Decimal(str(ticker_info["bid"])),
-            ask=Decimal(str(ticker_info["ask"])),
-            bid_size=Decimal(str(ticker_info["bidSize"])),
-            ask_size=Decimal(str(ticker_info["askSize"])),
-            last=Decimal(str(ticker_info["last"])),
+            bid=to_decimal_or_none(ticker_info["bid"]),
+            ask=to_decimal_or_none(ticker_info["ask"]),
+            bid_size=to_decimal_or_none(ticker_info["bidSize"]),
+            ask_size=to_decimal_or_none(ticker_info["askSize"]),
+            last=to_decimal_or_none(ticker_info["last"]),
             timestamp=ticker_info["time"],
         )
 

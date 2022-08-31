@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import decimal
 from decimal import Decimal
 from enum import Enum, auto
 from typing import List
@@ -132,3 +133,15 @@ class Config:
             whitelist=whitelist,
             blacklist=blacklist,
         )
+
+
+def to_decimal_or_none(number: float | int | str) -> Decimal | None:
+    if isinstance(number, (float, int)):
+        return Decimal(str(number))
+    elif isinstance(number, str):
+        try:
+            return Decimal(number)
+        except decimal.InvalidOperation:
+            return None
+    else:
+        return None
