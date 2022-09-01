@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from dataclasses import dataclass
+from typing import Mapping
 
 import aiohttp
 
@@ -22,84 +23,84 @@ class LatestMessageStoreHandler(logging.Handler):
         self.latest_message = self.format(record)
 
 
-class SlackWrappedLogger(logging.Logger):
+class SlackWrappedLogger(logging.LoggerAdapter):
     URL = "https://slack.com/api/chat.postMessage"
 
-    def __init__(self, name="", level=logging.NOTSET, auth_token=None):
-        super().__init__(name, level)
-        self.auth_token = auth_token
-
-        self.lastest_msg_store_handler = LatestMessageStoreHandler()
-        self.addHandler(self.lastest_msg_store_handler)
-
-    def addHandler(self, hdlr: logging.Handler) -> None:
-        self.lastest_msg_store_handler.setFormatter(hdlr.formatter)
-        return super().addHandler(hdlr)
+    def __init__(self, logger, extra: Mapping[str, object]) -> None:
+        super().__init__(logger, extra)
+        self.latest_message_store_handler = LatestMessageStoreHandler()
+        parent_formatter = self.logger.handlers[0].formatter
+        self.latest_message_store_handler.setFormatter(parent_formatter)
+        self.logger.addHandler(self.latest_message_store_handler)
 
     def debug(self, msg, *args, **kwargs):
         slack: bool = kwargs.pop("slack", False)
-        channel: str = kwargs.pop("channel", None)
-        super().debug(msg, *args, **kwargs)
+        msg, kwargs = self.process(msg, kwargs)
+        self.logger.debug(msg, *args, stacklevel=2, **kwargs)
 
         if slack and self.isEnabledFor(logging.DEBUG):
-            assert (
-                channel is not None
-            ), "If slack is True, argument 'channel' should be given"
+            auth_token = self.extra["auth_token"]
+            channel = self.extra["info_channel"]
             asyncio.create_task(
                 self.slack_send_message(
-                    channel, self.lastest_msg_store_handler.latest_message
+                    auth_token,
+                    channel,
+                    self.latest_message_store_handler.latest_message,
                 )
             )
 
     def info(self, msg, *args, **kwargs):
         slack: bool = kwargs.pop("slack", False)
-        channel: str = kwargs.pop("channel", None)
-        super().info(msg, *args, **kwargs)
+        msg, kwargs = self.process(msg, kwargs)
+        self.logger.info(msg, *args, stacklevel=2, **kwargs)
 
         if slack and self.isEnabledFor(logging.INFO):
-            assert (
-                channel is not None
-            ), "If slack is True, argument 'channel' should be given"
+            auth_token = self.extra["auth_token"]
+            channel = self.extra["info_channel"]
             asyncio.create_task(
                 self.slack_send_message(
-                    channel, self.lastest_msg_store_handler.latest_message
+                    auth_token,
+                    channel,
+                    self.latest_message_store_handler.latest_message,
                 )
             )
 
     def warning(self, msg, *args, **kwargs):
         slack: bool = kwargs.pop("slack", False)
-        channel: str = kwargs.pop("channel", None)
-        super().warning(msg, *args, **kwargs)
+        msg, kwargs = self.process(msg, kwargs)
+        self.logger.warning(msg, *args, stacklevel=2, **kwargs)
 
         if slack and self.isEnabledFor(logging.WARNING):
-            assert (
-                channel is not None
-            ), "If slack is True, argument 'channel' should be given"
+            auth_token = self.extra["auth_token"]
+            channel = self.extra["alert_channel"]
             asyncio.create_task(
                 self.slack_send_message(
-                    channel, self.lastest_msg_store_handler.latest_message
+                    auth_token,
+                    channel,
+                    self.latest_message_store_handler.latest_message,
                 )
             )
 
     def error(self, msg, *args, **kwargs):
         slack: bool = kwargs.pop("slack", False)
-        channel: str = kwargs.pop("channel", None)
-        super().error(msg, *args, **kwargs)
+        msg, kwargs = self.process(msg, kwargs)
+        self.logger.error(msg, *args, stacklevel=2, **kwargs)
 
         if slack and self.isEnabledFor(logging.ERROR):
-            assert (
-                channel is not None
-            ), "If slack is True, argument 'channel' should be given"
+            auth_token = self.extra["auth_token"]
+            channel = self.extra["alert_channel"]
             asyncio.create_task(
                 self.slack_send_message(
-                    channel, self.lastest_msg_store_handler.latest_message
+                    auth_token,
+                    channel,
+                    self.latest_message_store_handler.latest_message,
                 )
             )
 
-    async def slack_send_message(self, channel: str, text: str):
-        if not self.auth_token or not channel:
+    async def slack_send_message(self, auth_token: str, channel: str, text: str):
+        if not auth_token or not channel:
             return
-        headers = {"Authorization": "Bearer " + self.auth_token}
+        headers = {"Authorization": "Bearer " + auth_token}
         data = {
             "channel": channel,
             "text": text,

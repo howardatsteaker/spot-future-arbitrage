@@ -109,10 +109,16 @@ class MainProcess:
             fh.setFormatter(formatter)
             fh.set_name("file_handler")
             handlers.append(fh)
-        logger = SlackWrappedLogger(auth_token=self.config.slack_config.auth_token)
-        logger.setLevel(level)
-        for handler in handlers:
-            logger.addHandler(handler)
+        logging.basicConfig(level=level, handlers=handlers)
+        logger = logging.getLogger()
+        logger = SlackWrappedLogger(
+            logger,
+            {
+                "auth_token": self.config.slack_config.auth_token,
+                "info_channel": self.config.slack_config.summary_channel,
+                "alert_channel": self.config.slack_config.alert_channel,
+            },
+        )
         return logger
 
     @property
