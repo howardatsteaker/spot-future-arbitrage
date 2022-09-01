@@ -3,6 +3,10 @@ import time
 from dataclasses import asdict
 from decimal import Decimal
 
+from src.backtest.backtest_util import resolution_to_dir_name
+from src.exchange.ftx.ftx_data_type import FtxCandleResolution
+from src.indicator.bollinger import BollingerBacktest
+
 from ..exchange.ftx.ftx_data_type import FtxHedgePair
 from .backtest_bollinger import run_backtest
 from .ftx_data_types import BackTestConfig
@@ -17,7 +21,7 @@ def main():
     expiration_time = "2022/09/30"
     trades_dir = "local/trades/"
     save_dir = "local/"
-    resolution = "1H"
+    resolution = FtxCandleResolution.ONE_HOUR
 
     hedge_pair: FtxHedgePair = FtxHedgePair(
         coin="BTC", spot="BTC/USD", future="BTC-0930"
@@ -36,10 +40,17 @@ def main():
     config: BackTestConfig = BackTestConfig(
         fee_rate=Decimal("0.000228"),
         collateral_weight=Decimal("0.975"),
+        start_timestamp=start_timestamp,
+        end_timestamp=end_timestamp,
         ts_to_stop_open=expiration_timestamp - 86400,
         ts_to_expiry=expiration_timestamp,
         expiration_price=Decimal("21141.1"),
         leverage=Decimal("3"),
+        save_dir=save_dir,
+    )
+
+    indicator = BollingerBacktest(
+        hedge_pair=hedge_pair, kline_resolution=resolution, backtest_config=config
     )
 
     print(f"download {hedge_pair.spot} trades in {trades_dir}")
@@ -60,7 +71,7 @@ def main():
         hedge_pair.spot,
         start_timestamp,
         end_timestamp,
-        resolution=resolution,
+        resolution=resolution_to_dir_name(resolution),
         save_dir=save_dir + "kline",
     )
     print(f"save future {hedge_pair.future} kline from trades")
@@ -69,7 +80,7 @@ def main():
         hedge_pair.future,
         start_timestamp,
         end_timestamp,
-        resolution=resolution,
+        resolution=resolution_to_dir_name(resolution),
         save_dir=save_dir + "kline",
     )
     print("save merged trades")
@@ -88,49 +99,12 @@ def main():
         spot_data_dir,
         start_timestamp,
         end_timestamp,
-        resolution="1H",
+        resolution=resolution_to_dir_name(resolution),
         save_path=save_dir + "merged_kline",
     )
 
-    trades_path = (
-        save_dir
-        + "merged_trades/"
-        + FtxHedgePair.to_dir_name(hedge_pair.future)
-        + "/"
-        + str(start_timestamp)
-        + "_"
-        + str(end_timestamp)
-        + ".parquet"
-    )
-    spot_klines_path = (
-        save_dir
-        + "kline/"
-        + FtxHedgePair.to_dir_name(hedge_pair.spot)
-        + "/"
-        + str(start_timestamp)
-        + "_"
-        + str(end_timestamp)
-        + "_"
-        + str(resolution)
-        + ".parquet"
-    )
-    future_klines_path = (
-        save_dir
-        + "kline/"
-        + FtxHedgePair.to_dir_name(hedge_pair.future)
-        + "/"
-        + str(start_timestamp)
-        + "_"
-        + str(end_timestamp)
-        + "_"
-        + str(resolution)
-        + ".parquet"
-    )
-
     print("running backtest...")
-    run_backtest(
-        trades_path, spot_klines_path, future_klines_path, config=asdict(config)
-    )
+    run_backtest(indicator)
 
 
 if __name__ == "__main__":

@@ -299,7 +299,10 @@ class CombinedModelState(BaseState):
 class BackTestConfig:
     fee_rate: Decimal
     collateral_weight: Decimal
+    start_timestamp: int
+    end_timestamp: int
     ts_to_stop_open: int
     ts_to_expiry: int
     expiration_price: Decimal
     leverage: Decimal
+    save_dir: str

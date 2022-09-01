@@ -1,13 +1,24 @@
 import time
+from dataclasses import dataclass
+from datetime import datetime
 from decimal import Decimal
 from typing import List
 
 import dateutil.parser
+import numpy as np
 import pandas as pd
 
+from src.backtest.backtest_util import resolution_to_dir_name
+from src.backtest.ftx_data_types import BackTestConfig
 from src.exchange.ftx.ftx_client import FtxExchange
 from src.exchange.ftx.ftx_data_type import FtxCandleResolution, FtxHedgePair
 from src.indicator.base_indicator import BaseIndicator
+
+
+@dataclass
+class BollingerParams:
+    length: int
+    std_mult: float
 
 
 class Bollinger(BaseIndicator):
@@ -26,19 +37,48 @@ class Bollinger(BaseIndicator):
         self,
         hedge_pair: FtxHedgePair,
         kline_resolution: FtxCandleResolution,
-        length: int = 20,
-        std_mult: float = 2.0,
+        params: BollingerParams = None,
     ):
         super().__init__(kline_resolution)
         self.hedge_pair = hedge_pair
-        self.length = length
-        self.std_mult = std_mult
+        if not params:
+            # default params
+            self.params: BollingerParams = BollingerParams(length=20, std_mult=2.0)
+        else:
+            self.params: BollingerParams = params
 
+    @staticmethod
+    def compute_thresholds(
+        spot_candles_df, future_candles_df, params: BollingerParams, as_df=False
+    ):
+        spot_close = spot_candles_df["close"].rename("s_close")
+        future_close = future_candles_df["close"].rename("f_close")
+        concat_df = pd.concat([spot_close, future_close], axis=1)
+        concat_df["basis"] = concat_df["f_close"] - concat_df["s_close"]
+        rolling = concat_df["basis"].rolling(params.length)
+        concat_df["ma"] = rolling.mean()
+        concat_df["std"] = rolling.std()
+
+        if as_df:
+            return (
+                concat_df["ma"] + params.std_mult * concat_df["std"],
+                concat_df["ma"] - params.std_mult * concat_df["std"],
+            )
+        else:
+            ma = concat_df["ma"].iloc[-1]
+            std = concat_df["std"].iloc[-1]
+
+            upper_threshold = ma + params.std_mult * std
+            lower_threshold = ma - params.std_mult * std
+
+            return upper_threshold, lower_threshold
+
+    # for live trade usage
     async def update_indicator_info(self):
         client = FtxExchange("", "")
         resolution = self._kline_resolution
         end_ts = (time.time() // resolution.value - 1) * resolution.value
-        start_ts = end_ts - self.length * resolution.value
+        start_ts = end_ts - self.params.length * resolution.value
         spot_candles = await client.get_candles(
             self.hedge_pair.spot, resolution, start_ts, end_ts
         )
@@ -55,23 +95,13 @@ class Bollinger(BaseIndicator):
         spot_df = self.candles_to_df(spot_candles)
         future_df = self.candles_to_df(future_candles)
 
-        spot_close = spot_df["close"].rename("s_close")
-        future_close = future_df["close"].rename("f_close")
-        concat_df = pd.concat([spot_close, future_close], axis=1)
-        concat_df["basis"] = concat_df["f_close"] - concat_df["s_close"]
-        rolling = concat_df["basis"].rolling(self.length)
-        concat_df["ma"] = rolling.mean()
-        concat_df["std"] = rolling.std()
-
-        ma = concat_df["ma"].iloc[-1]
-        std = concat_df["std"].iloc[-1]
-
-        upper_threshold = ma + self.std_mult * std
-        lower_threshold = ma - self.std_mult * std
+        upper_threshold, lower_threshold = self.compute_thresholds(
+            spot_df, future_df, self.params
+        )
 
         self._upper_threshold = Decimal(str(upper_threshold))
         self._lower_threshold = Decimal(str(lower_threshold))
-        self._last_kline_start_timestamp = concat_df.index[-1].timestamp()
+        self._last_kline_start_timestamp = spot_df.index[-1].timestamp()
 
     def candles_to_df(self, candles: List[dict]) -> pd.DataFrame:
         df = pd.DataFrame.from_records(candles)
@@ -80,3 +110,68 @@ class Bollinger(BaseIndicator):
         df.set_index("startTime", inplace=True)
         df.sort_index(inplace=True)
         return df
+
+
+class BollingerBacktest(Bollinger):
+    def __init__(
+        self,
+        hedge_pair: FtxHedgePair,
+        kline_resolution: FtxCandleResolution,
+        backtest_config: BackTestConfig,
+    ):
+        super().__init__(hedge_pair, kline_resolution)
+        self.config = backtest_config
+
+    def generate_params(self) -> list[BollingerParams]:
+        params = []
+        for boll_mult in np.arange(1, 3, 0.1):
+            boll_mult = round(boll_mult, 1)
+            params.append(BollingerParams(length=20, std_mult=boll_mult))
+        return params
+
+    def get_save_path(self) -> str:
+        from_datatime = datetime.fromtimestamp(self.config.start_timestamp)
+        from_date_str = from_datatime.strftime("%Y%m%d")
+        to_datatime = datetime.fromtimestamp(self.config.end_timestamp)
+        to_data_str = to_datatime.strftime("%Y%m%d")
+        return f"local/backtest/bollinger_{from_date_str}_{to_data_str}"
+
+    def get_trades_path(self):
+        return (
+            self.config.save_dir
+            + "merged_trades/"
+            + FtxHedgePair.to_dir_name(self.hedge_pair.future)
+            + "/"
+            + str(self.config.start_timestamp)
+            + "_"
+            + str(self.config.end_timestamp)
+            + ".parquet"
+        )
+
+    def get_spot_klines_path(self):
+        return (
+            self.config.save_dir
+            + "kline/"
+            + FtxHedgePair.to_dir_name(self.hedge_pair.spot)
+            + "/"
+            + str(self.config.start_timestamp)
+            + "_"
+            + str(self.config.end_timestamp)
+            + "_"
+            + str(resolution_to_dir_name(self.kline_resolution))
+            + ".parquet"
+        )
+
+    def get_future_klines_path(self):
+        return (
+            self.config.save_dir
+            + "kline/"
+            + FtxHedgePair.to_dir_name(self.hedge_pair.future)
+            + "/"
+            + str(self.config.start_timestamp)
+            + "_"
+            + str(self.config.end_timestamp)
+            + "_"
+            + str(resolution_to_dir_name(self.kline_resolution))
+            + ".parquet"
+        )
