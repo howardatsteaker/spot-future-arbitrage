@@ -22,11 +22,11 @@ class LatestMessageStoreHandler(logging.Handler):
         self.latest_message = self.format(record)
 
 
-class SlackWrappedLogger(logging.RootLogger):
+class SlackWrappedLogger(logging.Logger):
     URL = "https://slack.com/api/chat.postMessage"
 
-    def __init__(self, level=logging.NOTSET, auth_token=None):
-        super().__init__(level)
+    def __init__(self, name="", level=logging.NOTSET, auth_token=None):
+        super().__init__(name, level)
         self.auth_token = auth_token
 
         self.lastest_msg_store_handler = LatestMessageStoreHandler()
