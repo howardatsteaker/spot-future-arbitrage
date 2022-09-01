@@ -32,8 +32,6 @@ class SlackWrappedLogger(logging.Logger):
         self.lastest_msg_store_handler = LatestMessageStoreHandler()
         self.addHandler(self.lastest_msg_store_handler)
 
-        self.stacklevel = 2
-
     def addHandler(self, hdlr: logging.Handler) -> None:
         self.lastest_msg_store_handler.setFormatter(hdlr.formatter)
         return super().addHandler(hdlr)
@@ -41,7 +39,7 @@ class SlackWrappedLogger(logging.Logger):
     def debug(self, msg, *args, **kwargs):
         slack: bool = kwargs.pop("slack", False)
         channel: str = kwargs.pop("channel", None)
-        super().debug(msg, *args, stacklevel=self.stacklevel, **kwargs)
+        super().debug(msg, *args, **kwargs)
 
         if slack and self.isEnabledFor(logging.DEBUG):
             assert (
@@ -56,7 +54,7 @@ class SlackWrappedLogger(logging.Logger):
     def info(self, msg, *args, **kwargs):
         slack: bool = kwargs.pop("slack", False)
         channel: str = kwargs.pop("channel", None)
-        super().info(msg, *args, stacklevel=self.stacklevel, **kwargs)
+        super().info(msg, *args, **kwargs)
 
         if slack and self.isEnabledFor(logging.INFO):
             assert (
@@ -71,7 +69,7 @@ class SlackWrappedLogger(logging.Logger):
     def warning(self, msg, *args, **kwargs):
         slack: bool = kwargs.pop("slack", False)
         channel: str = kwargs.pop("channel", None)
-        super().warning(msg, *args, stacklevel=self.stacklevel, **kwargs)
+        super().warning(msg, *args, **kwargs)
 
         if slack and self.isEnabledFor(logging.WARNING):
             assert (
@@ -86,7 +84,7 @@ class SlackWrappedLogger(logging.Logger):
     def error(self, msg, *args, **kwargs):
         slack: bool = kwargs.pop("slack", False)
         channel: str = kwargs.pop("channel", None)
-        super().error(msg, *args, stacklevel=self.stacklevel, **kwargs)
+        super().error(msg, *args, **kwargs)
 
         if slack and self.isEnabledFor(logging.ERROR):
             assert (
