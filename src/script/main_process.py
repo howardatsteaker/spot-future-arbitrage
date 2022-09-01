@@ -28,6 +28,7 @@ from src.exchange.ftx.ftx_data_type import (Ftx_EWMA_InterestRate,
                                             TradeType)
 from src.script.fund_manager import FundManager
 from src.script.sub_process import run_sub_process
+from src.util.slack import SlackWrappedLogger
 
 
 class MainProcess:
@@ -108,8 +109,10 @@ class MainProcess:
             fh.setFormatter(formatter)
             fh.set_name("file_handler")
             handlers.append(fh)
-        logging.basicConfig(level=level, handlers=handlers)
-        logger = logging.getLogger()
+        logger = SlackWrappedLogger(auth_token=self.config.slack_config.auth_token)
+        logger.setLevel(level)
+        for handler in handlers:
+            logger.addHandler(handler)
         return logger
 
     @property
