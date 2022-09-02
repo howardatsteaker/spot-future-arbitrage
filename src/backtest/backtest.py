@@ -1,6 +1,6 @@
 import pathlib
 from dataclasses import asdict
-from datetime import timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal
 from os.path import exists
 
@@ -13,9 +13,13 @@ from src.indicator.base_indicator import BaseIndicator
 
 
 def run_backtest(backtest_indicator: BaseIndicator):
-    trades = pd.read_parquet(backtest_indicator.get_trades_path())
-    spot_klines = pd.read_parquet(backtest_indicator.get_spot_klines_path())
-    future_klines = pd.read_parquet(backtest_indicator.get_future_klines_path())
+    trades = pd.read_parquet(backtest_util.get_trades_path(backtest_indicator))
+    spot_klines = pd.read_parquet(
+        backtest_util.get_spot_klines_path(backtest_indicator)
+    )
+    future_klines = pd.read_parquet(
+        backtest_util.get_future_klines_path(backtest_indicator)
+    )
 
     save_path = backtest_indicator.get_save_path()
     save_path_obj = pathlib.Path(save_path)
@@ -62,18 +66,20 @@ def run_backtest(backtest_indicator: BaseIndicator):
             dt_truncate = dt.replace(minute=0, second=0, microsecond=0) - timedelta(
                 hours=1
             )
+
+            # TODO log debug message
             if dt_truncate not in upper_threshold_df.index:
                 continue
 
-            boll_up = upper_threshold_df[dt_truncate]
-            boll_low = lower_threshold_df[dt_truncate]
-            if np.isnan(boll_low):
+            upper_bound = upper_threshold_df[dt_truncate]
+            lower_bound = lower_threshold_df[dt_truncate]
+            if np.isnan(lower_bound):
                 continue
 
             # open position
             if (
                 future_side == "SELL"
-                and basis > boll_up
+                and basis > upper_bound
                 and ts < backtest_indicator.config.ts_to_stop_open
             ):
                 spot_market_order = MarketOrder(
@@ -112,7 +118,7 @@ def run_backtest(backtest_indicator: BaseIndicator):
                 entry_basis = state.future_entry_price - state.spot_entry_price
                 if (
                     future_side == "BUY"
-                    and basis <= max(0, boll_low)
+                    and basis <= max(0, lower_bound)
                     and entry_basis > basis
                 ):
                     close_size = min(state.spot_position, max_available_size)
@@ -187,8 +193,13 @@ def run_backtest(backtest_indicator: BaseIndicator):
         index += 1
 
     summary_path = f"{save_path}/summary.json"
+    from_datatime = datetime.fromtimestamp(backtest_indicator.config.start_timestamp)
+    to_datatime = datetime.fromtimestamp(backtest_indicator.config.end_timestamp)
     result_dict = {
-        # can put other info
+        "spot": backtest_indicator.hedge_pair.spot,
+        "future": backtest_indicator.hedge_pair.future,
+        "from_date": from_datatime.strftime("%Y/%m/%d"),
+        "to_date": to_datatime.strftime("%Y/%m/%d"),
         "results": summary_list,
     }
     backtest_util.save_summary(result_dict, summary_path)

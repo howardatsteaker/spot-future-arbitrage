@@ -42,9 +42,5 @@ See [src/backtest/ftx_trades_downloader.py](src/backtest/ftx_trades_downloader.p
 Once the data for backtesting is prepared, one can backtest with different indicator. For instance, the [Bollinger Band](src/backtest/backtest_bollinger.py), [MACD](src/backtest/backtest_macd.py) or others.
 
 ```
-python3 -m src.backtest.backtest_bollinger
-```
-or
-```
-python3 -m src.backtest.backtest_macd
+python3 -m src.backtest.backtest
 ```

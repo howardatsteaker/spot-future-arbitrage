@@ -1,13 +1,38 @@
 import time
+from dataclasses import dataclass
+from datetime import datetime
 from decimal import Decimal
 from typing import List
 
 import dateutil.parser
+import numpy as np
 import pandas as pd
 
+from src.backtest.ftx_data_types import BackTestConfig
 from src.exchange.ftx.ftx_client import FtxExchange
 from src.exchange.ftx.ftx_data_type import FtxCandleResolution, FtxHedgePair
 from src.indicator.base_indicator import BaseIndicator
+
+
+@dataclass
+class MACDParams:
+    fast_length: int
+    slow_length: float
+    signal_length: int
+    std_length: int
+    std_mult: float
+
+    @property
+    def alpha_fast(self):
+        return 2 / (self.fast_length + 1)
+
+    @property
+    def alpha_slow(self):
+        return 2 / (self.slow_length + 1)
+
+    @property
+    def alpha_macd(self):
+        return 2 / (self.signal_length + 1)
 
 
 class MACD(BaseIndicator):
@@ -29,23 +54,80 @@ class MACD(BaseIndicator):
         self,
         hedge_pair: FtxHedgePair,
         kline_resolution: FtxCandleResolution,
-        fast_length: int = 12,
-        slow_length: int = 26,
-        signal_length: int = 9,
-        std_length: int = 20,
-        std_mult: float = 1.0,
+        params: MACDParams = None,
     ):
         super().__init__(kline_resolution)
         self.hedge_pair = hedge_pair
-        self.fast_length = fast_length
-        self.slow_length = slow_length
-        self.signal_length = signal_length
-        self.std_length = std_length
-        self.std_mult = std_mult
+        if not params:
+            # default params
+            self.params: MACDParams = MACDParams(
+                fast_length=12,
+                slow_length=26,
+                signal_length=9,
+                std_length=20,
+                std_mult=1.0,
+            )
+        else:
+            self.params: MACDParams = params
 
-        self.alpha_fast = 2 / (fast_length + 1)
-        self.alpha_slow = 2 / (slow_length + 1)
-        self.alpha_macd = 2 / (signal_length + 1)
+    @staticmethod
+    def compute_thresholds(
+        spot_candles_df, future_candles_df, params: MACDParams, as_df=False
+    ):
+        spot_close = spot_candles_df["close"].rename("s_close")
+        future_close = future_candles_df["close"].rename("f_close")
+        concat_df = pd.concat([spot_close, future_close], axis=1)
+        concat_df["basis"] = concat_df["f_close"] - concat_df["s_close"]
+        concat_df["fast_ema"] = concat_df["basis"].ewm(span=params.fast_length).mean()
+        concat_df["slow_ema"] = concat_df["basis"].ewm(span=params.slow_length).mean()
+        concat_df["dif"] = concat_df["fast_ema"] - concat_df["slow_ema"]
+        concat_df["macd"] = concat_df["dif"].ewm(span=params.signal_length).mean()
+        concat_df["dif_sub_macd"] = concat_df["dif"] - concat_df["macd"]
+        concat_df["std"] = concat_df["dif_sub_macd"].rolling(params.std_length).std()
+
+        last_fast = concat_df["fast_ema"].iloc[-1]
+        last_slow = concat_df["slow_ema"].iloc[-1]
+        last_macd = concat_df["macd"].iloc[-1]
+        std = concat_df["std"].iloc[-1]
+
+        if as_df:
+            upper_threshold_dt = (
+                (params.std_mult * concat_df["std"]) / (1 - params.alpha_macd)
+                + concat_df["macd"]
+                - (
+                    (1 - params.alpha_fast) * concat_df["fast_ema"]
+                    - (1 - params.alpha_slow) * concat_df["slow_ema"]
+                )
+            ) / (params.alpha_fast - params.alpha_slow)
+
+            lower_threshold_dt = (
+                (-params.std_mult * concat_df["std"]) / (1 - params.alpha_macd)
+                + concat_df["macd"]
+                - (
+                    (1 - params.alpha_fast) * concat_df["fast_ema"]
+                    - (1 - params.alpha_slow) * concat_df["slow_ema"]
+                )
+            ) / (params.alpha_fast - params.alpha_slow)
+            return (upper_threshold_dt, lower_threshold_dt)
+
+        upper_threshold = (
+            (params.std_mult * std) / (1 - params.alpha_macd)
+            + last_macd
+            - (
+                (1 - params.alpha_fast) * last_fast
+                - (1 - params.alpha_slow) * last_slow
+            )
+        ) / (params.alpha_fast - params.alpha_slow)
+        lower_threshold = (
+            (-params.std_mult * std) / (1 - params.alpha_macd)
+            + last_macd
+            - (
+                (1 - params.alpha_fast) * last_fast
+                - (1 - params.alpha_slow) * last_slow
+            )
+        ) / (params.alpha_fast - params.alpha_slow)
+
+        return upper_threshold, lower_threshold
 
     async def update_indicator_info(self):
         client = FtxExchange("", "")
@@ -68,36 +150,13 @@ class MACD(BaseIndicator):
         spot_df = self.candles_to_df(spot_candles)
         future_df = self.candles_to_df(future_candles)
 
-        spot_close = spot_df["close"].rename("s_close")
-        future_close = future_df["close"].rename("f_close")
-        concat_df = pd.concat([spot_close, future_close], axis=1)
-        concat_df["basis"] = concat_df["f_close"] - concat_df["s_close"]
-        concat_df["fast_ema"] = concat_df["basis"].ewm(span=self.fast_length).mean()
-        concat_df["slow_ema"] = concat_df["basis"].ewm(span=self.slow_length).mean()
-        concat_df["dif"] = concat_df["fast_ema"] - concat_df["slow_ema"]
-        concat_df["macd"] = concat_df["dif"].ewm(span=self.signal_length).mean()
-        concat_df["dif_sub_macd"] = concat_df["dif"] - concat_df["macd"]
-        concat_df["std"] = concat_df["dif_sub_macd"].rolling(self.std_length).std()
-
-        last_fast = concat_df["fast_ema"].iloc[-1]
-        last_slow = concat_df["slow_ema"].iloc[-1]
-        last_macd = concat_df["macd"].iloc[-1]
-        std = concat_df["std"].iloc[-1]
-
-        upper_threshold = (
-            (self.std_mult * std) / (1 - self.alpha_macd)
-            + last_macd
-            - ((1 - self.alpha_fast) * last_fast - (1 - self.alpha_slow) * last_slow)
-        ) / (self.alpha_fast - self.alpha_slow)
-        lower_threshold = (
-            (-self.std_mult * std) / (1 - self.alpha_macd)
-            + last_macd
-            - ((1 - self.alpha_fast) * last_fast - (1 - self.alpha_slow) * last_slow)
-        ) / (self.alpha_fast - self.alpha_slow)
+        upper_threshold, lower_threshold = self.compute_thresholds(
+            spot_df, future_df, self.params
+        )
 
         self._upper_threshold = Decimal(str(upper_threshold))
         self._lower_threshold = Decimal(str(lower_threshold))
-        self._last_kline_start_timestamp = concat_df.index[-1].timestamp()
+        self._last_kline_start_timestamp = spot_df.index[-1].timestamp()
 
     def candles_to_df(self, candles: List[dict]) -> pd.DataFrame:
         df = pd.DataFrame.from_records(candles)
@@ -106,3 +165,38 @@ class MACD(BaseIndicator):
         df.set_index("startTime", inplace=True)
         df.sort_index(inplace=True)
         return df
+
+
+class MACDBacktest(MACD):
+    def __init__(
+        self,
+        hedge_pair: FtxHedgePair,
+        kline_resolution: FtxCandleResolution,
+        backtest_config: BackTestConfig,
+    ):
+        super().__init__(hedge_pair, kline_resolution)
+        self.config = backtest_config
+
+    def generate_params(self) -> list[MACDParams]:
+        params = []
+        for std_mult in np.arange(0.9, 3, 0.1):
+            std_mult = round(std_mult, 1)
+            params.append(
+                MACDParams(
+                    fast_length=12,
+                    slow_length=26,
+                    signal_length=9,
+                    std_length=20,
+                    std_mult=std_mult,
+                )
+            )
+        return params
+
+    def get_save_path(self) -> str:
+        from_datatime = datetime.fromtimestamp(self.config.start_timestamp)
+        from_date_str = from_datatime.strftime("%Y%m%d")
+        to_datatime = datetime.fromtimestamp(self.config.end_timestamp)
+        to_data_str = to_datatime.strftime("%Y%m%d")
+        return (
+            f"local/backtest/macd_{self.hedge_pair.coin}_{from_date_str}_{to_data_str}"
+        )

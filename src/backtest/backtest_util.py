@@ -10,7 +10,8 @@ import pandas as pd
 from src.backtest.ftx_data_types import (CombinedModelHedgeTrade,
                                          CombinedModelHedgeType, HedgeTrade,
                                          HedgeType, LogState)
-from src.exchange.ftx.ftx_data_type import FtxCandleResolution
+from src.exchange.ftx.ftx_data_type import FtxCandleResolution, FtxHedgePair
+from src.indicator.base_indicator import BaseIndicator
 
 
 def logs_to_summary(logs: List[LogState]) -> dict:
@@ -277,3 +278,62 @@ def resolution_to_dir_name(resolution: FtxCandleResolution):
         return "4H"
     elif resolution == FtxCandleResolution.ONE_DAY:
         return "1D"
+
+
+def _check_backtest_attr(indicator_backtest: BaseIndicator):
+    if not hasattr(indicator_backtest, "hedge_pair"):
+        return False
+    if not hasattr(indicator_backtest, "config"):
+        return False
+    if not hasattr(indicator_backtest, "kline_resolution"):
+        return False
+    return True
+
+
+def get_trades_path(indicator_backtest: BaseIndicator):
+    if not _check_backtest_attr(indicator_backtest):
+        raise ValueError("Not backtest Indicator")
+    return (
+        indicator_backtest.config.save_dir
+        + "merged_trades/"
+        + FtxHedgePair.to_dir_name(indicator_backtest.hedge_pair.future)
+        + "/"
+        + str(indicator_backtest.config.start_timestamp)
+        + "_"
+        + str(indicator_backtest.config.end_timestamp)
+        + ".parquet"
+    )
+
+
+def get_spot_klines_path(indicator_backtest: BaseIndicator):
+    if not _check_backtest_attr(indicator_backtest):
+        raise ValueError("Not backtest Indicator")
+    return (
+        indicator_backtest.config.save_dir
+        + "kline/"
+        + FtxHedgePair.to_dir_name(indicator_backtest.hedge_pair.spot)
+        + "/"
+        + str(indicator_backtest.config.start_timestamp)
+        + "_"
+        + str(indicator_backtest.config.end_timestamp)
+        + "_"
+        + str(resolution_to_dir_name(indicator_backtest.kline_resolution))
+        + ".parquet"
+    )
+
+
+def get_future_klines_path(indicator_backtest: BaseIndicator):
+    if not _check_backtest_attr(indicator_backtest):
+        raise ValueError("Not backtest Indicator")
+    return (
+        indicator_backtest.config.save_dir
+        + "kline/"
+        + FtxHedgePair.to_dir_name(indicator_backtest.hedge_pair.future)
+        + "/"
+        + str(indicator_backtest.config.start_timestamp)
+        + "_"
+        + str(indicator_backtest.config.end_timestamp)
+        + "_"
+        + str(resolution_to_dir_name(indicator_backtest.kline_resolution))
+        + ".parquet"
+    )
