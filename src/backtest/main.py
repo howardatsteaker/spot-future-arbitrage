@@ -1,14 +1,14 @@
 import datetime
 import time
-from dataclasses import asdict
 from decimal import Decimal
 
 from src.backtest.backtest_util import resolution_to_dir_name
 from src.exchange.ftx.ftx_data_type import FtxCandleResolution
 from src.indicator.bollinger import BollingerBacktest
+from src.indicator.macd import MACDBacktest
 
 from ..exchange.ftx.ftx_data_type import FtxHedgePair
-from .backtest_bollinger import run_backtest
+from .backtest import run_backtest
 from .ftx_data_types import BackTestConfig
 from .ftx_prepare_backtest_data import (save_kline_from_trades,
                                         save_merged_kline, save_merged_trades)
@@ -21,6 +21,7 @@ def main():
     expiration_time = "2022/09/30"
     trades_dir = "local/trades/"
     save_dir = "local/"
+    backtest_class = MACDBacktest
     resolution = FtxCandleResolution.ONE_HOUR
 
     hedge_pair: FtxHedgePair = FtxHedgePair(
@@ -49,7 +50,7 @@ def main():
         save_dir=save_dir,
     )
 
-    indicator = BollingerBacktest(
+    indicator = backtest_class(
         hedge_pair=hedge_pair, kline_resolution=resolution, backtest_config=config
     )
 

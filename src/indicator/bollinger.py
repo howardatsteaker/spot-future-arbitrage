@@ -8,7 +8,6 @@ import dateutil.parser
 import numpy as np
 import pandas as pd
 
-from src.backtest.backtest_util import resolution_to_dir_name
 from src.backtest.ftx_data_types import BackTestConfig
 from src.exchange.ftx.ftx_client import FtxExchange
 from src.exchange.ftx.ftx_data_type import FtxCandleResolution, FtxHedgePair
@@ -134,44 +133,4 @@ class BollingerBacktest(Bollinger):
         from_date_str = from_datatime.strftime("%Y%m%d")
         to_datatime = datetime.fromtimestamp(self.config.end_timestamp)
         to_data_str = to_datatime.strftime("%Y%m%d")
-        return f"local/backtest/bollinger_{from_date_str}_{to_data_str}"
-
-    def get_trades_path(self):
-        return (
-            self.config.save_dir
-            + "merged_trades/"
-            + FtxHedgePair.to_dir_name(self.hedge_pair.future)
-            + "/"
-            + str(self.config.start_timestamp)
-            + "_"
-            + str(self.config.end_timestamp)
-            + ".parquet"
-        )
-
-    def get_spot_klines_path(self):
-        return (
-            self.config.save_dir
-            + "kline/"
-            + FtxHedgePair.to_dir_name(self.hedge_pair.spot)
-            + "/"
-            + str(self.config.start_timestamp)
-            + "_"
-            + str(self.config.end_timestamp)
-            + "_"
-            + str(resolution_to_dir_name(self.kline_resolution))
-            + ".parquet"
-        )
-
-    def get_future_klines_path(self):
-        return (
-            self.config.save_dir
-            + "kline/"
-            + FtxHedgePair.to_dir_name(self.hedge_pair.future)
-            + "/"
-            + str(self.config.start_timestamp)
-            + "_"
-            + str(self.config.end_timestamp)
-            + "_"
-            + str(resolution_to_dir_name(self.kline_resolution))
-            + ".parquet"
-        )
+        return f"local/backtest/bollinger_{self.hedge_pair.coin}_{from_date_str}_{to_data_str}"
