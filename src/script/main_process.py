@@ -28,6 +28,7 @@ from src.exchange.ftx.ftx_data_type import (Ftx_EWMA_InterestRate,
                                             TradeType)
 from src.script.fund_manager import FundManager
 from src.script.sub_process import run_sub_process
+from src.util.slack import SlackWrappedLogger
 
 
 class MainProcess:
@@ -110,6 +111,14 @@ class MainProcess:
             handlers.append(fh)
         logging.basicConfig(level=level, handlers=handlers)
         logger = logging.getLogger()
+        logger = SlackWrappedLogger(
+            logger,
+            {
+                "auth_token": self.config.slack_config.auth_token,
+                "info_channel": self.config.slack_config.summary_channel,
+                "alert_channel": self.config.slack_config.alert_channel,
+            },
+        )
         return logger
 
     @property
@@ -217,7 +226,9 @@ class MainProcess:
                 raise
             except Exception:
                 self.logger.error(
-                    "Unexpected error while fetching market status.", exc_info=True
+                    "Unexpected error while fetching market status.",
+                    exc_info=True,
+                    slack=True,
                 )
                 await asyncio.sleep(1)
 
@@ -339,7 +350,9 @@ class MainProcess:
                 raise
             except Exception:
                 self.logger.error(
-                    "Unexpected error while fetching USD interest rate.", exc_info=True
+                    "Unexpected error while fetching USD interest rate.",
+                    exc_info=True,
+                    slack=True,
                 )
                 await asyncio.sleep(5)
 
@@ -357,7 +370,9 @@ class MainProcess:
                 raise
             except Exception:
                 self.logger.error(
-                    "Unexpected error while fetching account fee rate.", exc_info=True
+                    "Unexpected error while fetching account fee rate.",
+                    exc_info=True,
+                    slack=True,
                 )
                 await asyncio.sleep(5)
 
@@ -381,7 +396,9 @@ class MainProcess:
                 raise
             except Exception:
                 self.logger.error(
-                    "Unexpected error while fetching account fee rate.", exc_info=True
+                    "Unexpected error while fetching account fee rate.",
+                    exc_info=True,
+                    slack=True,
                 )
                 await asyncio.sleep(5)
 
@@ -406,7 +423,9 @@ class MainProcess:
                 raise
             except Exception:
                 self.logger.error(
-                    "Unexpected error while fetching account info.", exc_info=True
+                    "Unexpected error while fetching account info.",
+                    exc_info=True,
+                    slack=True,
                 )
                 await asyncio.sleep(5)
 
@@ -425,7 +444,9 @@ class MainProcess:
                 raise
             except Exception:
                 self.logger.error(
-                    "Unexpected error while fetching account info.", exc_info=True
+                    "Unexpected error while fetching account info.",
+                    exc_info=True,
+                    slack=True,
                 )
                 await asyncio.sleep(5)
 
@@ -495,7 +516,9 @@ class MainProcess:
                 raise
             except Exception as e:
                 self.logger.error(
-                    f"Unexpected error while spawn new sub process. {e}", exc_info=True
+                    f"Unexpected error while spawn new sub process. {e}",
+                    exc_info=True,
+                    slack=True,
                 )
 
     async def _release_dead_sub_process_loop(self):
@@ -517,7 +540,9 @@ class MainProcess:
                 raise
             except Exception:
                 self.logger.error(
-                    "Unexpected error while release dead sub process.", exc_info=True
+                    "Unexpected error while release dead sub process.",
+                    exc_info=True,
+                    slack=True,
                 )
 
     def _stop_all_sub_processes(self):
@@ -554,6 +579,7 @@ class MainProcess:
                 self.logger.error(
                     "Unexpected error while listen to sub process message.",
                     exc_info=True,
+                    slack=True,
                 )
                 await asyncio.sleep(5)
 
@@ -601,7 +627,9 @@ class MainProcess:
                 raise
             except Exception:
                 self.logger.error(
-                    "Unexpected error while listen to ws orders.", exc_info=True
+                    "Unexpected error while listen to ws orders.",
+                    exc_info=True,
+                    slack=True,
                 )
                 await asyncio.sleep(5)
 

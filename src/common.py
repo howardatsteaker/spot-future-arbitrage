@@ -7,6 +7,8 @@ from typing import List
 
 import yaml
 
+from src.util.slack import SlackConfig
+
 
 class AutoName(Enum):
     def _generate_next_value_(name, start, count, last_values):
@@ -52,6 +54,7 @@ class Config:
         open_fee_coverage_multiplier: Decimal,
         whitelist: List[str],
         blacklist: List[str],
+        slack_config: SlackConfig,
     ):
         self.exchange = exchange
         self.api_key = api_key
@@ -85,6 +88,7 @@ class Config:
         self.open_fee_coverage_multiplier = open_fee_coverage_multiplier
         self.whitelist = whitelist
         self.blacklist = blacklist
+        self.slack_config = slack_config
 
     @classmethod
     def from_yaml(cls, file_path: str) -> Config:
@@ -132,6 +136,12 @@ class Config:
             ),
             whitelist=whitelist,
             blacklist=blacklist,
+            slack_config=SlackConfig(
+                enable=data["slack"]["enable"],
+                auth_token=data["slack"]["auth_token"],
+                summary_channel=data["slack"]["summary_channel"],
+                alert_channel=data["slack"]["alert_channel"],
+            ),
         )
 
 

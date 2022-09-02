@@ -37,6 +37,7 @@ from src.exchange.ftx.ftx_error import ExchangeError, RateLimitExceeded
 from src.indicator.base_indicator import BaseIndicator
 from src.indicator.bollinger import Bollinger, BollingerParams
 from src.indicator.macd import MACD
+from src.util.slack import SlackWrappedLogger
 
 
 @dataclass
@@ -158,6 +159,14 @@ class SubProcess:
         logging.basicConfig(level=level, handlers=handlers)
         logger = logging.getLogger()
         logging.getLogger("asyncio").setLevel(logging.WARNING)
+        logger = SlackWrappedLogger(
+            logger,
+            {
+                "auth_token": self.config.slack_config.auth_token,
+                "info_channel": self.config.slack_config.summary_channel,
+                "alert_channel": self.config.slack_config.alert_channel,
+            },
+        )
         return logger
 
     async def _update_position_size(self):
@@ -623,7 +632,8 @@ class SubProcess:
 
             if isinstance(spot_order_result, Exception):
                 self.logger.error(
-                    f"Unexpected error while place {self.hedge_pair.spot} market order. Error message: {spot_order_result.with_traceback(None)}"
+                    f"Unexpected error while place {self.hedge_pair.spot} market order. Error message: {spot_order_result.with_traceback(None)}",
+                    slack=self.config.slack_config.enable,
                 )
                 spot_result_ok = False
             else:
@@ -634,7 +644,8 @@ class SubProcess:
                 spot_result_ok = True
             if isinstance(future_order_result, Exception):
                 self.logger.error(
-                    f"Unexpected error while place {self.hedge_pair.future} market order. Error message: {future_order_result.with_traceback(None)}"
+                    f"Unexpected error while place {self.hedge_pair.future} market order. Error message: {future_order_result.with_traceback(None)}",
+                    slack=self.config.slack_config.enable,
                 )
                 future_result_ok = False
             else:
@@ -649,7 +660,8 @@ class SubProcess:
                     # check filled size
                     if spot_order_msg.filled_size != future_order_msg.filled_size:
                         self.logger.warning(
-                            f"Filled size is not matched, {spot_order_msg.market}: {spot_order_msg.filled_size}, {future_order_msg.market}: {future_order_msg.filled_size}"
+                            f"Filled size is not matched, {spot_order_msg.market}: {spot_order_msg.filled_size}, {future_order_msg.market}: {future_order_msg.filled_size}",
+                            slack=self.config.slack_config.enable,
                         )
                     else:
                         # log open pnl rate, apr
@@ -694,7 +706,8 @@ class SubProcess:
             if spot_result_ok:
                 if spot_order_msg is None:
                     self.logger.warning(
-                        f"Order {spot_order_id} not found or not closed"
+                        f"{self.hedge_pair.spot} order {spot_order_id} not found or not closed",
+                        slack=self.config.slack_config.enable,
                     )
                 else:
                     # update spot position size, entry price
@@ -711,7 +724,8 @@ class SubProcess:
             if future_result_ok:
                 if future_order_msg is None:
                     self.logger.warning(
-                        f"Order {future_order_id} not found or not closed"
+                        f"{self.hedge_pair.future} order {future_order_id} not found or not closed",
+                        slack=self.config.slack_config.enable,
                     )
                 else:
                     # update future position size, entry price
@@ -920,7 +934,8 @@ class SubProcess:
 
         if isinstance(spot_order_result, Exception):
             self.logger.error(
-                f"Unexpected error while place {self.hedge_pair.spot} market order. Error message: {spot_order_result.with_traceback(None)}"
+                f"Unexpected error while place {self.hedge_pair.spot} market order. Error message: {spot_order_result.with_traceback(None)}",
+                slack=self.config.slack_config.enable,
             )
             spot_result_ok = False
         else:
@@ -931,7 +946,8 @@ class SubProcess:
             spot_result_ok = True
         if isinstance(future_order_result, Exception):
             self.logger.error(
-                f"Unexpected error while place {self.hedge_pair.future} market order. Error message: {future_order_result.with_traceback(None)}"
+                f"Unexpected error while place {self.hedge_pair.future} market order. Error message: {future_order_result.with_traceback(None)}",
+                slack=self.config.slack_config.enable,
             )
             future_result_ok = False
         else:
@@ -946,7 +962,8 @@ class SubProcess:
                 # check filled size
                 if spot_order_msg.filled_size != future_order_msg.filled_size:
                     self.logger.warning(
-                        f"Filled size is not matched, {spot_order_msg.market}: {spot_order_msg.filled_size}, {future_order_msg.market}: {future_order_msg.filled_size}"
+                        f"Filled size is not matched, {spot_order_msg.market}: {spot_order_msg.filled_size}, {future_order_msg.market}: {future_order_msg.filled_size}",
+                        slack=self.config.slack_config.enable,
                     )
                 else:
                     # log close pnl rate, apr
@@ -984,7 +1001,10 @@ class SubProcess:
 
         if spot_result_ok:
             if spot_order_msg is None:
-                self.logger.warning(f"Order {spot_order_id} not found or not closed")
+                self.logger.warning(
+                    f"{self.hedge_pair.spot} order {spot_order_id} not found or not closed",
+                    slack=self.config.slack_config.enable,
+                )
             else:
                 # update spot position size, entry price
                 spot_new_size = self.spot_position_size - spot_order_msg.filled_size
@@ -994,7 +1014,10 @@ class SubProcess:
 
         if future_result_ok:
             if future_order_msg is None:
-                self.logger.warning(f"Order {future_order_id} not found or not closed")
+                self.logger.warning(
+                    f"{self.hedge_pair.future} order {future_order_id} not found or not closed",
+                    slack=self.config.slack_config.enable,
+                )
             else:
                 # update future position size, entry price
                 future_new_size = (
@@ -1025,6 +1048,7 @@ class SubProcess:
                 self.logger.error(
                     f"Unexpected error while open {self.hedge_pair.coin} position.",
                     exc_info=True,
+                    slack=self.config.slack_config.enable,
                 )
                 await asyncio.sleep(5)
 
@@ -1053,6 +1077,7 @@ class SubProcess:
                 self.logger.error(
                     f"Unexpected error while close {self.hedge_pair.coin} position.",
                     exc_info=True,
+                    slack=self.config.slack_config.enable,
                 )
                 await asyncio.sleep(5)
 

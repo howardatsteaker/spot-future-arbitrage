@@ -49,3 +49,9 @@ whitelist:
 # the 'blacklist' key can be deleted or empty
 blacklist:
   - AMC
+
+slack:
+  enable: True
+  auth_token: ''
+  summary_channel: 'spot_futures_arbitrage'
+  alert_channel: 'sf-arb-alert'
