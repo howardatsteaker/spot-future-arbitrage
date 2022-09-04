@@ -133,7 +133,7 @@ class MACD(BaseIndicator):
         client = FtxExchange("", "")
         resolution = self._kline_resolution
         end_ts = (time.time() // resolution.value - 1) * resolution.value
-        start_ts = end_ts - self.slow_length * resolution.value
+        start_ts = end_ts - self.params.slow_length * resolution.value
         spot_candles = await client.get_candles(
             self.hedge_pair.spot, resolution, start_ts, end_ts
         )

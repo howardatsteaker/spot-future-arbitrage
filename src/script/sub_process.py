@@ -36,7 +36,7 @@ from src.exchange.ftx.ftx_data_type import (Ftx_EWMA_InterestRate,
 from src.exchange.ftx.ftx_error import ExchangeError, RateLimitExceeded
 from src.indicator.base_indicator import BaseIndicator
 from src.indicator.bollinger import Bollinger, BollingerParams
-from src.indicator.macd import MACD
+from src.indicator.macd import MACD, MACDParams
 from src.util.slack import SlackWrappedLogger
 
 
@@ -322,16 +322,19 @@ class SubProcess:
     def _init_get_indicator(self) -> BaseIndicator:
         if self.config.indicator["name"] == "macd":
             params = self.config.indicator["params"]
-            return MACD(
-                self.hedge_pair,
-                kline_resolution=FtxCandleResolution.from_seconds(
-                    params["kline_resolution"]
-                ),
+            macd_params = MACDParams(
                 fast_length=params["fast_length"],
                 slow_length=params["slow_length"],
                 signal_length=params["signal_length"],
                 std_length=params["std_length"],
                 std_mult=params["std_mult"],
+            )
+            return MACD(
+                self.hedge_pair,
+                kline_resolution=FtxCandleResolution.from_seconds(
+                    params["kline_resolution"]
+                ),
+                params=macd_params,
             )
         elif self.config.indicator["name"] == "bollinger":
             params = self.config.indicator["params"]
