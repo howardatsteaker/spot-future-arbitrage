@@ -21,6 +21,8 @@ from src.exchange.ftx.ftx_data_type import (Ftx_EWMA_InterestRate,
                                             FtxCandleResolution,
                                             FtxCollateralWeight,
                                             FtxCollateralWeightMessage,
+                                            FtxEntryPriceRequestMessage,
+                                            FtxEntryPriceResponseMessage,
                                             FtxFeeRate, FtxFeeRateMessage,
                                             FtxFundOpenFilledMessage,
                                             FtxFundRequestMessage,
@@ -84,6 +86,7 @@ class SubProcess:
         self.future_entry_price: Decimal = None
         self.spot_position_size: Decimal = Decimal(0)
         self.future_position_size: Decimal = Decimal(0)  # negative means short postion
+        self._position_size_update_event = asyncio.Event()
 
         self.indicator = self._init_get_indicator()
 
@@ -193,6 +196,7 @@ class SubProcess:
         self.logger.info(
             f"{self.hedge_pair.future} position size is {self.future_position_size}"
         )
+        self._position_size_update_event.set()
 
     async def _update_entry_price(self):
         async with self._state_update_lock:
@@ -458,6 +462,15 @@ class SubProcess:
                     self._ws_orders_events[order_id] = asyncio.Event()
                 if msg.status == FtxOrderStatus.CLOSED:
                     self._ws_orders_events[order_id].set()
+            elif type(msg) is FtxEntryPriceRequestMessage:
+                market = msg.market
+                if market == self.hedge_pair.spot:
+                    entry_price = self.spot_entry_price
+                elif market == self.hedge_pair.future:
+                    entry_price = self.future_entry_price
+                else:
+                    entry_price = None
+                self.conn.send(FtxEntryPriceResponseMessage(market, entry_price))
             else:
                 self.logger.warning(
                     f"{self.hedge_pair.coin} receive unknown message: {msg}"
@@ -1062,6 +1075,7 @@ class SubProcess:
             )
             return
         await self._future_expiry_ts_update_event.wait()
+        await self._position_size_update_event.wait()
         while (
             self.future_expiry_ts - time.time()
             > self.config.seconds_before_expiry_to_stop_close_position
