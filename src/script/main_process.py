@@ -542,7 +542,7 @@ class MainProcess:
     async def _release_dead_sub_process_loop(self):
         while True:
             try:
-                for coin, process in self._sub_processes.items():
+                for coin, process in list(self._sub_processes.items()):
                     if not process.is_alive():
                         # release process resource
                         process.join()
