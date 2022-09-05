@@ -21,6 +21,8 @@ from src.exchange.ftx.ftx_data_type import (Ftx_EWMA_InterestRate,
                                             FtxCandleResolution,
                                             FtxCollateralWeight,
                                             FtxCollateralWeightMessage,
+                                            FtxEntryPriceRequestMessage,
+                                            FtxEntryPriceResponseMessage,
                                             FtxFeeRate, FtxFeeRateMessage,
                                             FtxFundOpenFilledMessage,
                                             FtxFundRequestMessage,
@@ -455,6 +457,15 @@ class SubProcess:
                     self._ws_orders_events[order_id] = asyncio.Event()
                 if msg.status == FtxOrderStatus.CLOSED:
                     self._ws_orders_events[order_id].set()
+            elif type(msg) is FtxEntryPriceRequestMessage:
+                market = msg.market
+                if market == self.hedge_pair.spot:
+                    entry_price = self.spot_entry_price
+                elif market == self.hedge_pair.future:
+                    entry_price = self.future_entry_price
+                else:
+                    entry_price = None
+                self.conn.send(FtxEntryPriceResponseMessage(market, entry_price))
             else:
                 self.logger.warning(
                     f"{self.hedge_pair.coin} receive unknown message: {msg}"

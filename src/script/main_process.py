@@ -6,19 +6,22 @@ import re
 import time
 from decimal import Decimal
 from multiprocessing.connection import Connection
+from sys import exc_info
 from typing import Dict, List, Tuple
 
 import dateutil.parser
 
-from src.common import Config, Exchange
+from src.common import Config, Exchange, to_decimal_or_none
 from src.exchange.ftx.ftx_client import FtxExchange
 from src.exchange.ftx.ftx_data_type import (Ftx_EWMA_InterestRate,
                                             FtxCollateralWeight,
                                             FtxCollateralWeightMessage,
+                                            FtxEntryPriceRequestMessage,
+                                            FtxEntryPriceResponseMessage,
                                             FtxFeeRate, FtxFeeRateMessage,
                                             FtxFundOpenFilledMessage,
                                             FtxFundRequestMessage,
-                                            FtxHedgePair,
+                                            FtxHedgePair, FtxHedgePairSummary,
                                             FtxInterestRateMessage,
                                             FtxLeverageInfo,
                                             FtxLeverageMessage,
@@ -39,6 +42,7 @@ class MainProcess:
     ACCOUNT_INFO_POLLING_INTERVAL = 3600
     FUND_MANAGER_POLLING_INTERVAL = 3
     RELEASE_DEAD_SUB_PROCESS_INTERVAL = 300
+    LOG_SUMMARY_INTERVAL = 3600
 
     def __init__(self, config: Config):
         self.config: Config = config
@@ -55,6 +59,12 @@ class MainProcess:
             self.fee_rate = FtxFeeRate()
             self.collateral_weights: Dict[str, FtxCollateralWeight] = {}
             self.leverage_info = FtxLeverageInfo()
+
+            # log summary
+            self._entry_prices: Dict[str, Decimal] = {}  # market: price
+            self._receive_entry_price_events: Dict[
+                str, asyncio.Event
+            ] = {}  # market: Event
 
             # params initializer, to notify sub process all params are ready
             self._trading_rules_ready_event = asyncio.Event()
@@ -82,6 +92,7 @@ class MainProcess:
             self._account_info_polling_task: asyncio.Task = None
             self._fund_manager_polling_task: asyncio.Task = None
             self._release_dead_sub_process_loop_task: asyncio.Task = None
+            self._log_summary_polling_task: asyncio.Task = None
 
             # websocket
             self.exchange.ws_register_order_channel()
@@ -176,6 +187,10 @@ class MainProcess:
             self._release_dead_sub_process_loop_task = asyncio.create_task(
                 self._release_dead_sub_process_loop()
             )
+        if self._log_summary_polling_task is None:
+            self._log_summary_polling_task = asyncio.create_task(
+                self._log_summary_polling_loop()
+            )
 
     def stop_network(self):
         if self._market_status_polling_task is not None:
@@ -208,6 +223,9 @@ class MainProcess:
         if self._release_dead_sub_process_loop_task is not None:
             self._release_dead_sub_process_loop_task.cancel()
             self._release_dead_sub_process_loop_task = None
+        if self._log_summary_polling_task is not None:
+            self._log_summary_polling_task.cancel()
+            self._log_summary_polling_task = None
         self._stop_all_sub_process_listen_tasks()
         self._stop_all_sub_processes()
 
@@ -237,7 +255,8 @@ class MainProcess:
         for market in market_infos:
             symbol = market["name"]
             min_order_size = Decimal(str(market["sizeIncrement"]))
-            trading_rules[symbol] = FtxTradingRule(symbol, min_order_size)
+            price_tick = Decimal(str(market["priceIncrement"]))
+            trading_rules[symbol] = FtxTradingRule(symbol, min_order_size, price_tick)
         self.trading_rules.update(trading_rules)
         self._trading_rules_ready_event.set()
         for coin, (conn, _) in self._connections.items():
@@ -572,6 +591,12 @@ class MainProcess:
                     conn.send(response)
                 elif type(msg) is FtxFundOpenFilledMessage:
                     await self.fund_manager.handle_open_order_filled(msg)
+                elif type(msg) is FtxEntryPriceResponseMessage:
+                    market = msg.market
+                    if self._receive_entry_price_events.get(market) is None:
+                        self._receive_entry_price_events[market] = asyncio.Event()
+                    self._entry_prices[market] = msg.entry_price
+                    self._receive_entry_price_events[market].set()
                 self._sub_process_notify_events[coin].clear()
             except asyncio.CancelledError:
                 raise
@@ -632,6 +657,128 @@ class MainProcess:
                     slack=self.config.slack_config.enable,
                 )
                 await asyncio.sleep(5)
+
+    async def _log_summary_polling_loop(self):
+        await asyncio.sleep(60)  # wait for entry price update
+        try:
+            while True:
+                try:
+                    await self._trading_rules_ready_event.wait()
+                    account_task = self.exchange.get_account()
+                    balances_task = self.exchange.get_balances()
+                    account, balances = await asyncio.gather(
+                        account_task, balances_task
+                    )
+                    username = account["username"]
+                    positions = account.pop("positions")
+                    account_value = to_decimal_or_none(account["totalAccountValue"])
+                    collateral_supply = to_decimal_or_none(account["collateral"])
+                    free_collateral = to_decimal_or_none(account["freeCollateral"])
+                    position_value = to_decimal_or_none(account["totalPositionSize"])
+                    leverage = position_value / account_value
+                    summarys: Dict[str, FtxHedgePairSummary] = {}
+
+                    # loop balances
+                    usd_size = Decimal(0)
+                    account_usd_value = Decimal(0)
+                    for balance in balances:
+                        coin = balance["coin"]
+                        spot = FtxHedgePair.coin_to_spot(coin)
+                        total = to_decimal_or_none(balance["total"])
+                        usd_value = to_decimal_or_none(balance["usdValue"])
+                        account_usd_value += usd_value
+                        if coin == "USD":
+                            usd_size = total
+                        else:
+                            if total != 0:
+                                summary = FtxHedgePairSummary(
+                                    FtxHedgePair.from_coin(coin, self.config.season),
+                                    spot_size=total,
+                                    spot_usd_value=usd_value,
+                                    spot_price_tick=self.trading_rules[spot].price_tick,
+                                )
+                                summarys[coin] = summary
+
+                    # loop positions
+                    for position in positions:
+                        future = position["future"]
+                        future_size = to_decimal_or_none(position["netSize"])
+                        coin = FtxHedgePair.future_to_coin(future)
+                        if summarys.get(coin):
+                            summarys[coin].future_size = future_size
+                            summarys[coin].future_price_tick = (
+                                self.trading_rules[future].price_tick,
+                            )
+                        else:
+                            if future_size != 0:
+                                summary = FtxHedgePairSummary(
+                                    FtxHedgePair.from_future(future),
+                                    future_size=future_size,
+                                    future_price_tick=self.trading_rules[
+                                        future
+                                    ].price_tick,
+                                )
+
+                    # request entry price from sub process
+                    for coin, summary in summarys.items():
+                        if self._connections.get(coin) is None:
+                            continue
+                        spot = summary.hedge_pair.spot
+                        future = summary.hedge_pair.future
+                        conn = self._connections[coin][0]
+                        # update spot entry price
+                        conn.send(FtxEntryPriceRequestMessage(spot))
+                        if self._receive_entry_price_events.get(spot) is None:
+                            self._receive_entry_price_events[spot] = asyncio.Event()
+                        try:
+                            await asyncio.wait_for(
+                                self._receive_entry_price_events[spot].wait(), 1
+                            )
+                        except asyncio.TimeoutError:
+                            continue
+                        else:
+                            summary.spot_entry_price = self._entry_prices[spot]
+                        # update future entry price
+                        conn.send(FtxEntryPriceRequestMessage(future))
+                        if self._receive_entry_price_events.get(future) is None:
+                            self._receive_entry_price_events[future] = asyncio.Event()
+                        try:
+                            await asyncio.wait_for(
+                                self._receive_entry_price_events[future].wait(), 1
+                            )
+                        except asyncio.TimeoutError:
+                            continue
+                        else:
+                            summary.future_entry_price = self._entry_prices[future]
+
+                    # create summary text
+                    text = f"{username}\n"
+                    text += f"Total USD value: ${account_usd_value:,.0f}\n"
+                    text += f"Collateral supply: ${collateral_supply:,.0f}\n"
+                    text += f"Free collateral: $ {free_collateral:,.0f}\n"
+                    text += f"Leverage: {leverage:.2f}x\n"
+                    text += f">USD ${usd_size:,.0f}\n"
+                    for summary in sorted(summarys.values(), reverse=True):
+                        text += f">{summary}\n"
+                    self.logger.info(text, slack=self.config.slack_config.enable)
+
+                    # wait next round
+                    now = time.time()
+                    current_tick = (
+                        now // self.LOG_SUMMARY_INTERVAL * self.LOG_SUMMARY_INTERVAL
+                    )
+                    next_tick = current_tick + self.LOG_SUMMARY_INTERVAL
+                    wait_time = next_tick - now
+                    await asyncio.sleep(wait_time)
+                except Exception:
+                    self.logger.error(
+                        "Unexcepted error while log summary.",
+                        exc_info=True,
+                        slack=self.config.slack_config.enable,
+                    )
+                    asyncio.sleep(10)
+        except asyncio.CancelledError:
+            raise
 
     async def run(self):
         self.start_network()

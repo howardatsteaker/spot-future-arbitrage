@@ -44,6 +44,7 @@ class FtxCandleResolution(Enum):
 class FtxTradingRule:
     symbol: str
     min_order_size: Decimal
+    price_tick: Decimal
 
 
 @dataclass
@@ -239,6 +240,17 @@ class FtxOrderMessage:
 
 
 @dataclass
+class FtxEntryPriceRequestMessage:
+    market: str
+
+
+@dataclass
+class FtxEntryPriceResponseMessage:
+    market: str
+    entry_price: Decimal
+
+
+@dataclass
 class FtxTicker:
     symbol: str
     bid: Decimal
@@ -287,3 +299,51 @@ class FtxOrderStatus(Enum):
             return cls.OPEN
         else:
             return cls.CLOSED
+
+
+@dataclass
+class FtxHedgePairSummary:
+    hedge_pair: FtxHedgePair
+    spot_size: Decimal = Decimal(0)
+    future_size: Decimal = Decimal(0)
+    spot_entry_price: Decimal = None
+    future_entry_price: Decimal = None
+    spot_usd_value: Decimal = Decimal(0)
+    spot_price_tick: Decimal = None
+    future_price_tick: Decimal = None
+
+    @property
+    def is_pair_size_equal(self) -> bool:
+        return self.spot_size + self.future_size == 0
+
+    @property
+    def basis(self) -> Union[Decimal, None]:
+        if (
+            self.spot_entry_price
+            and self.future_entry_price
+            and self.spot_size > 0
+            and self.future_size < 0
+        ):
+            return self.future_entry_price - self.spot_entry_price
+        else:
+            return None
+
+    def __lt__(self, other: FtxHedgePairSummary) -> bool:
+        return self.spot_usd_value < other.spot_usd_value
+
+    def __repr__(self) -> str:
+        if self.is_pair_size_equal:
+            text = (
+                f"{self.hedge_pair.coin} {self.spot_size} (${self.spot_usd_value:,.0f})"
+            )
+        else:
+            text = f"{self.hedge_pair.coin} `[{self.spot_size} {self.future_size}]` (${self.spot_usd_value:,.0f})"
+        basis = self.basis
+        spot_price_tick = self.spot_price_tick
+        future_price_tick = self.future_price_tick
+        if basis:
+            if spot_price_tick and future_price_tick:
+                price_tick = min(spot_price_tick, future_price_tick)
+                basis = basis // price_tick * price_tick
+            text += f", Basis: ${basis}"
+        return text
