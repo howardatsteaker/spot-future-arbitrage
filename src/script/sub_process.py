@@ -839,8 +839,9 @@ class SubProcess:
         side: Side,
         size: Decimal,
         reduce_only: bool = False,
-        attempts: int = 3,
+        attempts: int = 5,
         sleep: float = 0.2,
+        sleep_delay: float = 0.05,
     ):
         attempt = 0
         ret_error = None
@@ -858,6 +859,7 @@ class SubProcess:
                     ret_error = error
                     break
                 await asyncio.sleep(sleep)
+                sleep += sleep_delay
             except ExchangeError as error:
                 self.logger.error(
                     f"Fail to place {market} market {side.value} order with size: {size}, error: {error}"
