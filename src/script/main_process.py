@@ -6,7 +6,6 @@ import re
 import time
 from decimal import Decimal
 from multiprocessing.connection import Connection
-from sys import exc_info
 from typing import Dict, List, Tuple
 
 import dateutil.parser
@@ -706,9 +705,9 @@ class MainProcess:
                         coin = FtxHedgePair.future_to_coin(future)
                         if summarys.get(coin):
                             summarys[coin].future_size = future_size
-                            summarys[coin].future_price_tick = (
-                                self.trading_rules[future].price_tick,
-                            )
+                            summarys[coin].future_price_tick = self.trading_rules[
+                                future
+                            ].price_tick
                         else:
                             if future_size != 0:
                                 summary = FtxHedgePairSummary(
@@ -738,6 +737,8 @@ class MainProcess:
                             continue
                         else:
                             summary.spot_entry_price = self._entry_prices[spot]
+                        finally:
+                            self._receive_entry_price_events[spot].clear()
                         # update future entry price
                         conn.send(FtxEntryPriceRequestMessage(future))
                         if self._receive_entry_price_events.get(future) is None:
@@ -750,6 +751,8 @@ class MainProcess:
                             continue
                         else:
                             summary.future_entry_price = self._entry_prices[future]
+                        finally:
+                            self._receive_entry_price_events[future].clear()
 
                     # create summary text
                     text = f"{username}\n"
@@ -776,7 +779,7 @@ class MainProcess:
                         exc_info=True,
                         slack=self.config.slack_config.enable,
                     )
-                    asyncio.sleep(10)
+                    await asyncio.sleep(10)
         except asyncio.CancelledError:
             raise
 

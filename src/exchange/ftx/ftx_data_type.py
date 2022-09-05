@@ -5,6 +5,7 @@ import uuid
 from dataclasses import dataclass
 from decimal import Decimal
 from enum import Enum
+from typing import Union
 
 from src.common import to_decimal_or_none
 
