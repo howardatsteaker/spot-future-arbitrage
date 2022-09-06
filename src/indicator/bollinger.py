@@ -123,9 +123,11 @@ class BollingerBacktest(Bollinger):
 
     def generate_params(self) -> list[BollingerParams]:
         params = []
-        for boll_mult in np.arange(1, 3, 0.1):
+        for boll_mult in np.arange(0.8, 2.5, 0.1):
             boll_mult = round(boll_mult, 1)
-            params.append(BollingerParams(length=20, std_mult=boll_mult))
+            for length in np.arange(10, 50, 5):
+                length = int(length)
+                params.append(BollingerParams(length=length, std_mult=boll_mult))
         return params
 
     def get_save_path(self) -> str:

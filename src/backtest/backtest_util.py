@@ -1,6 +1,7 @@
 import json
 import pathlib
 from datetime import datetime
+from decimal import Decimal
 from typing import List
 
 import matplotlib.pyplot as plt
@@ -29,13 +30,25 @@ def logs_to_summary(logs: List[LogState]) -> dict:
     return {"avg_deposit": avg_deposit, "profit": profit, "roi": roi, "apr": apr}
 
 
-def save_summary(summary: dict, save_path: str) -> dict:
+class DecimalEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, Decimal):
+            return str(obj)
+        return json.JSONEncoder.default(self, obj)
+
+
+def save_to_file(summary: dict, save_path: str) -> dict:
     path = pathlib.Path(save_path)
     if not path.exists():
         path.parent.mkdir(parents=True, exist_ok=True)
-    # summary = logs_to_summary(logs)
+
     with path.open("w") as fp:
-        json.dump(summary, fp, indent=2)
+        json.dump(summary, fp, indent=2, cls=DecimalEncoder)
+    return summary
+
+
+def save_summary(summary: dict, save_path: str) -> dict:
+    save_to_file(summary, save_path)
     print(f"Save summary to {save_path}")
     return summary
 

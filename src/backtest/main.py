@@ -2,6 +2,8 @@ import datetime
 import time
 from decimal import Decimal
 
+from pick import pick
+
 from src.backtest.backtest_util import resolution_to_dir_name
 from src.exchange.ftx.ftx_data_type import FtxCandleResolution
 from src.indicator.bollinger import BollingerBacktest
@@ -16,16 +18,22 @@ from .ftx_trades_downloader import run_trades_data_download_process
 
 
 def main():
-    start_time = "2022/08/01"
-    end_time = "2022/08/22"
-    expiration_time = "2022/09/30"
+    start_time = "2022/03/26"
+    end_time = "2022/06/24"
+    expiration_time = "2022/06/24"
     trades_dir = "local/trades/"
     save_dir = "local/"
-    backtest_class = MACDBacktest
+
+    title = "Choose Strategy Class:"
+    options = [BollingerBacktest, MACDBacktest]
+
+    option, _ = pick(options, title, indicator="=>")
+
+    backtest_class = option
     resolution = FtxCandleResolution.ONE_HOUR
 
     hedge_pair: FtxHedgePair = FtxHedgePair(
-        coin="BTC", spot="BTC/USD", future="BTC-0930"
+        coin="BTC", spot="BTC/USD", future="BTC-0624"
     )
 
     start_timestamp = int(
