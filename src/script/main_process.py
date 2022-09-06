@@ -30,6 +30,7 @@ from src.exchange.ftx.ftx_data_type import (Ftx_EWMA_InterestRate,
                                             TradeType)
 from src.script.fund_manager import FundManager
 from src.script.sub_process import run_sub_process
+from src.util.rate_limit import RateLimiter
 from src.util.slack import SlackWrappedLogger
 
 
@@ -98,6 +99,12 @@ class MainProcess:
 
             # fund manager
             self.fund_manager = FundManager(leverage_limit=config.leverage_limit)
+
+            # rate limit
+            self.rate_limiter_manager = mp.Manager()
+            interval = config.rate_limit_config.interval
+            limit = config.rate_limit_config.limit
+            self.rate_limiter = RateLimiter(self.rate_limiter_manager, interval, limit)
 
     def _init_get_logger(self):
         log = self.config.log
@@ -493,7 +500,7 @@ class MainProcess:
                         # spawn sub process
                         sub_process = mp.Process(
                             target=run_sub_process,
-                            args=(hedge_pair, self.config, conn2),
+                            args=(hedge_pair, self.config, conn2, self.rate_limiter),
                             daemon=True,
                         )
                         sub_process.start()

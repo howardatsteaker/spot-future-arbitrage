@@ -39,6 +39,7 @@ from src.exchange.ftx.ftx_error import ExchangeError, RateLimitExceeded
 from src.indicator.base_indicator import BaseIndicator
 from src.indicator.bollinger import Bollinger, BollingerParams
 from src.indicator.macd import MACD, MACDParams
+from src.util.rate_limit import RateLimiter
 from src.util.slack import SlackWrappedLogger
 
 
@@ -55,10 +56,17 @@ class TickerNotifyType(Enum):
 class SubProcess:
     ENTRY_PRICE_POLLING_INTERVAL = 3600
 
-    def __init__(self, hedge_pair: FtxHedgePair, config: Config, conn: Connection):
+    def __init__(
+        self,
+        hedge_pair: FtxHedgePair,
+        config: Config,
+        conn: Connection,
+        rate_limiter: RateLimiter,
+    ):
         self.hedge_pair = hedge_pair
         self.config = config
         self.conn = conn
+        self.rate_limiter = rate_limiter
         self.logger = self._init_get_logger()
 
         self._loop = asyncio.get_event_loop()
@@ -534,6 +542,10 @@ class SubProcess:
             if self.leverage_info.current_leverage > self.config.leverage_limit:
                 return
 
+            # rate limit
+            if not self.rate_limiter.ok:
+                return
+
             # wait ticker notify
             ticker_notify_type = await self.wait_either_one_ticker_condition_notify()
             self.logger.debug(f"Get {ticker_notify_type.value} ticker notification")
@@ -645,6 +657,9 @@ class SubProcess:
             spot_order_result, future_order_result = await asyncio.gather(
                 spot_place_order, future_place_order, return_exceptions=True
             )
+            # call rate_limiter 2 times because we place 2 orders
+            self.rate_limiter.add_record()
+            self.rate_limiter.add_record()
 
             if isinstance(spot_order_result, Exception):
                 self.logger.error(
@@ -881,6 +896,11 @@ class SubProcess:
             return
         if self.future_position_size > -self.combined_trading_rule.min_order_size:
             return
+
+        # rate limit
+        if not self.rate_limiter.ok:
+            return
+
         position_size = min(self.spot_position_size, -self.future_position_size)
 
         # wait ticker notify
@@ -949,6 +969,9 @@ class SubProcess:
         spot_order_result, future_order_result = await asyncio.gather(
             spot_place_order, future_place_order, return_exceptions=True
         )
+        # call rate_limiter 2 times because we place 2 orders
+        self.rate_limiter.add_record()
+        self.rate_limiter.add_record()
 
         if isinstance(spot_order_result, Exception):
             self.logger.error(
@@ -1118,9 +1141,9 @@ class SubProcess:
         sys.exit(0)
 
 
-def run_sub_process(hedge_pair: FtxHedgePair, config: Config, conn: Connection):
+def run_sub_process(hedge_pair: FtxHedgePair, config: Config, conn: Connection, rate_limiter: RateLimiter):
     asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
-    sub_process = SubProcess(hedge_pair, config, conn)
+    sub_process = SubProcess(hedge_pair, config, conn, rate_limiter)
     sub_process.logger.info(f"start to run {hedge_pair.coin} process")
     signal(SIGTERM, sub_process.signal_terminate)
     loop = asyncio.get_event_loop()

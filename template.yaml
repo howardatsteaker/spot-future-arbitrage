@@ -55,3 +55,7 @@ slack:
   auth_token: ''
   summary_channel: 'spot_futures_arbitrage'
   alert_channel: 'sf-arb-alert'
+
+rate_limit:
+  interval: 0.2
+  limit: 7

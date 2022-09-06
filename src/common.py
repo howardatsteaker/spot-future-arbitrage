@@ -7,6 +7,7 @@ from typing import List
 
 import yaml
 
+from src.util.rate_limit import RateLimitConfig
 from src.util.slack import SlackConfig
 
 
@@ -55,6 +56,7 @@ class Config:
         whitelist: List[str],
         blacklist: List[str],
         slack_config: SlackConfig,
+        rate_limit_config: RateLimitConfig,
     ):
         self.exchange = exchange
         self.api_key = api_key
@@ -89,6 +91,7 @@ class Config:
         self.whitelist = whitelist
         self.blacklist = blacklist
         self.slack_config = slack_config
+        self.rate_limit_config = rate_limit_config
 
     @classmethod
     def from_yaml(cls, file_path: str) -> Config:
@@ -141,6 +144,10 @@ class Config:
                 auth_token=data["slack"]["auth_token"],
                 summary_channel=data["slack"]["summary_channel"],
                 alert_channel=data["slack"]["alert_channel"],
+            ),
+            rate_limit_config=RateLimitConfig(
+                interval=data["rate_limit"]["interval"],
+                limit=data["rate_limit"]["limit"],
             ),
         )
 
