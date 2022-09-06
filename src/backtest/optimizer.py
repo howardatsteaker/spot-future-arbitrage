@@ -29,7 +29,6 @@ def main():
     max_value = 0
     final_result = None
     for result in results:
-        print(result)
         evaluate_value = evaluate(result)
         if evaluate_value > max_value:
             max_value = evaluate_value
