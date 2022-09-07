@@ -49,6 +49,8 @@ class RateLimiter:
         for ts in list(self.ts_list):
             if now - ts > self.interval:
                 self.ts_list.remove(ts)
+            else:
+                break
 
     def add_record(self, new_ts: float = None):
         if new_ts is None:
