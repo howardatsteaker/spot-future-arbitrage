@@ -740,6 +740,11 @@ class SubProcess:
                         f"{self.hedge_pair.spot} order {spot_order_id} not found or not closed",
                         slack=self.config.slack_config.enable,
                     )
+                elif spot_order_msg.filled_size == 0:
+                    self.logger.warning(
+                        f"{self.hedge_pair.spot} market buy order {spot_order_id} closed but filled size is 0",
+                        slack=self.config.slack_config.enable,
+                    )
                 else:
                     # update spot position size, entry price
                     spot_new_size = self.spot_position_size + spot_order_msg.filled_size
@@ -756,6 +761,11 @@ class SubProcess:
                 if future_order_msg is None:
                     self.logger.warning(
                         f"{self.hedge_pair.future} order {future_order_id} not found or not closed",
+                        slack=self.config.slack_config.enable,
+                    )
+                elif future_order_msg.filled_size == 0:
+                    self.logger.warning(
+                        f"{self.hedge_pair.future} market sell order {future_order_id} closed but filled size is 0",
                         slack=self.config.slack_config.enable,
                     )
                 else:
@@ -1046,6 +1056,11 @@ class SubProcess:
                     f"{self.hedge_pair.spot} order {spot_order_id} not found or not closed",
                     slack=self.config.slack_config.enable,
                 )
+            elif spot_order_msg.filled_size == 0:
+                self.logger.warning(
+                    f"{self.hedge_pair.spot} market sell order {spot_order_id} closed but filled size is 0",
+                    slack=self.config.slack_config.enable,
+                )
             else:
                 # update spot position size, entry price
                 spot_new_size = self.spot_position_size - spot_order_msg.filled_size
@@ -1057,6 +1072,11 @@ class SubProcess:
             if future_order_msg is None:
                 self.logger.warning(
                     f"{self.hedge_pair.future} order {future_order_id} not found or not closed",
+                    slack=self.config.slack_config.enable,
+                )
+            elif future_order_msg.filled_size == 0:
+                self.logger.warning(
+                    f"{self.hedge_pair.future} market buy order {future_order_id} closed but filled size is 0",
                     slack=self.config.slack_config.enable,
                 )
             else:
