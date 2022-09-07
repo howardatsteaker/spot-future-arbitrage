@@ -219,7 +219,12 @@ def run_backtest(backtest_indicator: BaseIndicator):
 
         position_logs_path = f"{save_path}/positions/position_{index}.json"
         if not exists(position_logs_path):
-            backtest_util.save_to_file(position_logs, position_logs_path)
+            position_dict = {
+                "index": index,
+                "params": asdict(params),
+                "logs": position_logs,
+            }
+            backtest_util.save_to_file(position_dict, position_logs_path)
 
         index += 1
 
