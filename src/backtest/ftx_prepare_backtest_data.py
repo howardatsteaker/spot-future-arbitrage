@@ -15,15 +15,17 @@ def save_kline_from_trades(
     save_dir: str = "local/kline",
 ):
     symbol_path_name = symbol.replace("-", "_").replace("/", "_")
-    data_loader = DataLoader(data_dir)
-    trades_df = data_loader.get_trades_df(start_ts, end_ts)
-    klines_df = data_loader.trades_df_2_klines(trades_df, resolution=resolution)
     filename = os.path.join(
         save_dir, symbol_path_name, f"{start_ts}_{end_ts}_{resolution}.parquet"
     )
     if not os.path.exists(filename):
+        data_loader = DataLoader(data_dir)
+        trades_df = data_loader.get_trades_df(start_ts, end_ts)
+        klines_df = data_loader.trades_df_2_klines(trades_df, resolution=resolution)
         pathlib.Path(filename).parent.mkdir(parents=True, exist_ok=True)
         klines_df.to_parquet(filename)
+    else:
+        print(f"file {filename} exist")
 
 
 def save_merged_trades(

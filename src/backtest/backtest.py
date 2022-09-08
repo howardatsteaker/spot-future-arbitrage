@@ -42,6 +42,8 @@ def run_backtest(backtest_indicator: BaseIndicator):
         logs = []
 
         trades_iter = trades.itertuples()
+        save_dt_truncate = None
+        position_logs = []
         while True:
             try:
                 trade = next(trades_iter)
@@ -69,11 +71,27 @@ def run_backtest(backtest_indicator: BaseIndicator):
 
             # TODO log debug message
             if dt_truncate not in upper_threshold_df.index:
+                if save_dt_truncate != dt_truncate:
+                    save_dt_truncate = dt_truncate
+                    position_logs.append(
+                        {
+                            "timestamp": dt_truncate.timestamp(),
+                            "positions": state.spot_position,
+                        }
+                    )
                 continue
 
             upper_bound = upper_threshold_df[dt_truncate]
             lower_bound = lower_threshold_df[dt_truncate]
             if np.isnan(lower_bound):
+                if save_dt_truncate != dt_truncate:
+                    save_dt_truncate = dt_truncate
+                    position_logs.append(
+                        {
+                            "timestamp": dt_truncate.timestamp(),
+                            "positions": state.spot_position,
+                        }
+                    )
                 continue
 
             # open position
@@ -147,7 +165,16 @@ def run_backtest(backtest_indicator: BaseIndicator):
                     state.append_hedge_trade(ts, HedgeType.CLOSE, basis)
 
             # log
-            logs.append(state.to_log_state(timestamp=ts))
+            log_state = state.to_log_state(timestamp=ts)
+            logs.append(log_state)
+            if save_dt_truncate != dt_truncate:
+                save_dt_truncate = dt_truncate
+                position_logs.append(
+                    {
+                        "timestamp": dt_truncate.timestamp(),
+                        "positions": log_state.spot_position,
+                    }
+                )
 
         # liquidation after expiry
         if state.spot_position > 0:
@@ -186,9 +213,18 @@ def run_backtest(backtest_indicator: BaseIndicator):
         summary_list.append(summary_dict)
 
         # plot if not exist
-        plot_path = f"{save_path}/plot_{str(index)}.jpg"
+        plot_path = f"{save_path}/plots/plot_{str(index)}.jpg"
         if not exists(plot_path):
             backtest_util.plot_logs(logs, state.hedge_trades, plot_path, to_show=False)
+
+        position_logs_path = f"{save_path}/positions/position_{index}.json"
+        if not exists(position_logs_path):
+            position_dict = {
+                "index": index,
+                "params": asdict(params),
+                "logs": position_logs,
+            }
+            backtest_util.save_to_file(position_dict, position_logs_path)
 
         index += 1
 
