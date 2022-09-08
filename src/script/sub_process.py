@@ -3,7 +3,6 @@ import logging
 import pathlib
 import sys
 import time
-import uuid
 from dataclasses import dataclass
 from decimal import Decimal
 from enum import Enum
@@ -101,12 +100,10 @@ class SubProcess:
         self.future_expiry_ts: float = None
         self._future_expiry_ts_update_event = asyncio.Event()
 
-        self._fund_manager_response_events: Dict[uuid.UUID, asyncio.Event] = TTLCache(
-            maxsize=1000, ttl=60
-        )
-        self._fund_manager_response_messages: Dict[
-            uuid.UUID, FtxFundResponseMessage
-        ] = TTLCache(maxsize=1000, ttl=60)
+        # fund manager
+        self._budget = Decimal(0)
+        self._fund_manager_response_event: asyncio.Event = asyncio.Event()
+        self._fund_manager_response_message: FtxFundResponseMessage = None
 
         self._ws_orders: Dict[str, FtxOrderMessage] = TTLCache(
             maxsize=1000, ttl=60
@@ -456,10 +453,8 @@ class SubProcess:
                     f"{self.hedge_pair.coin} Receive leverage message: {msg.leverage}"
                 )
             elif type(msg) is FtxFundResponseMessage:
-                self._fund_manager_response_messages[msg.id] = msg
-                if not self._fund_manager_response_events.get(msg.id):
-                    self._fund_manager_response_events[msg.id] = asyncio.Event()
-                self._fund_manager_response_events[msg.id].set()
+                self._fund_manager_response_message = msg
+                self._fund_manager_response_event.set()
             elif type(msg) is FtxOrderMessage:
                 self.logger.debug(
                     f"{self.hedge_pair.coin} Receive ws order message: {msg}"
@@ -536,6 +531,32 @@ class SubProcess:
         elif future_task in done:
             return TickerNotifyType.FUTURE
 
+    async def _request_for_budget(self):
+        if self._budget < self.config.max_open_budget:
+            fund_needed = self.config.max_open_budget - self._budget
+            request = FtxFundRequestMessage(
+                coin=self.hedge_pair.coin,
+                fund_needed=fund_needed,
+            )
+            self.conn.send(request)
+
+            # await fund response
+            try:
+                await asyncio.wait_for(
+                    self._fund_manager_response_event.wait(),
+                    timeout=1,
+                )
+            except asyncio.TimeoutError:
+                self.logger.warning(
+                    f"{self.hedge_pair.coin} request fund for open position timeout."
+                )
+                return
+            else:
+                response = self._fund_manager_response_message
+                self._budget = response.fund_supply
+            finally:
+                self._fund_manager_response_event.clear()
+
     async def open_position(self):
         if self.ready:
             # if current leverage is too high, openning new position is disabled
@@ -544,6 +565,11 @@ class SubProcess:
 
             # rate limit
             if not self.rate_limiter.ok:
+                return
+
+            # request for budget
+            await self._request_for_budget()
+            if self._budget <= 0:
                 return
 
             # wait ticker notify
@@ -570,21 +596,45 @@ class SubProcess:
             if spot_price is None:
                 return
             basis = future_price - spot_price
+
+            # cost(or collateral needed) to open
+            # cost = spot + future collaterl + spot margin collateral + fee - weighted spot collateral supply
             future_collateral_needed = future_price / self.leverage_info.max_leverage
             spot_collateral_supplied = spot_price * self.collateral_weight.weight
+            spot_margin = spot_price / self.leverage_info.max_leverage
             fee = (spot_price + future_price) * self.fee_rate.taker_fee_rate
             cost = (
-                spot_price + future_collateral_needed - spot_collateral_supplied + fee
+                spot_price
+                + future_collateral_needed
+                + spot_margin
+                + fee
+                - spot_collateral_supplied
             )
-            profit = basis - 2 * fee
 
-            if basis < self.config.open_fee_coverage_multiplier * fee:
+            # compute expiry
+            seconds_to_expiry = max(0, self.future_expiry_ts - time.time())
+            days_to_expiry = Decimal(str(seconds_to_expiry / 86400))
+            hours_to_expiry = days_to_expiry * Decimal("24")
+
+            # profit
+            # profit = basis - open fee - close fee - spot borrow interest
+            # close fee is expected to be close to open fee
+            spot_borrow_interest = (
+                spot_price * self.ewma_interest_rate.hourly_rate * hours_to_expiry
+            )
+            profit = basis - 2 * fee - spot_borrow_interest
+
+            # basis will cover fees with a multiplier and the spot borrow interest
+            if (
+                basis
+                - self.config.open_fee_coverage_multiplier * fee
+                - spot_borrow_interest
+                <= 0
+            ):
                 return
 
             # get apr
             pnl_rate = profit / cost
-            seconds_to_expiry = max(0, self.future_expiry_ts - time.time())
-            days_to_expiry = Decimal(str(seconds_to_expiry / 86400))
             apr = pnl_rate * Decimal("365") / days_to_expiry
 
             # open signals
@@ -603,48 +653,13 @@ class SubProcess:
             if order_size <= 0:
                 return
 
-            # request fund from main process
+            # check the max open fund per iteration
             fund_needed = cost * order_size
-            spot_notional_value = spot_price * order_size
-            request_id = uuid.uuid4()
-            self.conn.send(
-                FtxFundRequestMessage(request_id, fund_needed, spot_notional_value)
-            )
-
-            # await fund response
-            if not self._fund_manager_response_events.get(request_id):
-                self._fund_manager_response_events[request_id] = asyncio.Event()
-            try:
-                await asyncio.wait_for(
-                    self._fund_manager_response_events[request_id].wait(),
-                    timeout=self.config.ticker_delay_threshold,
-                )
-            except asyncio.TimeoutError:
-                self.logger.warning(
-                    f"{self.hedge_pair.coin} request fund for open position timeout."
-                )
-                return
-            msg = self._fund_manager_response_messages[request_id]
-            if not msg.approve:
-                return
-
-            # calculate order size if fund_supply is smaller than fund_needed
-            if msg.fund_supply < fund_needed:
+            if fund_needed > self._budget:
                 order_size = self._get_open_order_size_with_fund_supply(
-                    msg.fund_supply, cost
+                    self._budget, cost
                 )
                 if order_size <= 0:
-                    return
-
-            # if borrow, calculate whether margin open is profitable or not
-            if msg.borrow > 0:
-                hours_to_expiry = days_to_expiry * Decimal("24")
-                borrow_pnl = (
-                    basis * order_size
-                    - 2 * (future_price + spot_price) * self.fee_rate.taker_fee_rate
-                    - msg.borrow * self.ewma_interest_rate.hourly_rate * hours_to_expiry
-                )
-                if borrow_pnl <= 0:
                     return
 
             # place order
@@ -724,15 +739,12 @@ class SubProcess:
                         self.logger.info(
                             f"{self.hedge_pair.future} Open APR: {apr:.2%}, Basis: {basis}, Indicator up: {self.indicator.upper_threshold}, size: {min(spot_size, future_size)}, filled APR: {real_apr:.2%}, Basis: {real_basis}, size: {spot_order_msg.filled_size}"
                         )
+                        # inform fund manager that open fund used
                         fund_used = real_cost * spot_order_msg.filled_size
-                        real_spot_notional_value = (
-                            spot_order_msg.avg_fill_price * spot_order_msg.filled_size
-                        )
                         self.conn.send(
-                            FtxFundOpenFilledMessage(
-                                request_id, fund_used, real_spot_notional_value
-                            )
+                            FtxFundOpenFilledMessage(self.hedge_pair.coin, fund_used)
                         )
+                        self._budget = max(Decimal(0), self._budget - fund_used)
 
             if spot_result_ok:
                 if spot_order_msg is None:
@@ -1048,8 +1060,6 @@ class SubProcess:
                         f"{self.hedge_pair.future} Close APR: {apr:.2%}, Basis: {close_basis}, Indicator low: {self.indicator.lower_threshold}, size: {min(spot_size, future_size)}, filled APR: {real_apr:.2%}, Basis: {real_basis}, size: {spot_order_msg.filled_size}"
                     )
 
-            # TODO: inform main process fund release
-
         if spot_result_ok:
             if spot_order_msg is None:
                 self.logger.warning(
@@ -1161,7 +1171,12 @@ class SubProcess:
         sys.exit(0)
 
 
-def run_sub_process(hedge_pair: FtxHedgePair, config: Config, conn: Connection, rate_limiter: RateLimiter):
+def run_sub_process(
+    hedge_pair: FtxHedgePair,
+    config: Config,
+    conn: Connection,
+    rate_limiter: RateLimiter,
+):
     asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
     sub_process = SubProcess(hedge_pair, config, conn, rate_limiter)
     sub_process.logger.info(f"start to run {hedge_pair.coin} process")

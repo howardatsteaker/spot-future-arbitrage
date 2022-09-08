@@ -53,6 +53,7 @@ class Config:
         seconds_before_expiry_to_stop_close_position: float,
         release_mode: bool,
         open_fee_coverage_multiplier: Decimal,
+        max_open_budget: Decimal,
         whitelist: List[str],
         blacklist: List[str],
         slack_config: SlackConfig,
@@ -70,6 +71,7 @@ class Config:
         self.apr_to_open_position = apr_to_open_position
         self.min_order_size_mode = min_order_size_mode
         self.open_order_size_multiplier = open_order_size_multiplier
+        self.max_open_budget = max_open_budget
         self.close_order_size_multiplier = close_order_size_multiplier
         self.max_leverage = max_leverage
         self.leverage_limit = leverage_limit
@@ -137,6 +139,7 @@ class Config:
             open_fee_coverage_multiplier=Decimal(
                 str(data["strategy"]["open_fee_coverage_multiplier"])
             ),
+            max_open_budget=Decimal(str(data["strategy"]["max_open_budget"])),
             whitelist=whitelist,
             blacklist=blacklist,
             slack_config=SlackConfig(
