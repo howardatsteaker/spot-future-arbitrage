@@ -48,24 +48,20 @@ class Bollinger(BaseIndicator):
 
     @staticmethod
     def compute_thresholds(
-        spot_candles_df, future_candles_df, params: BollingerParams, as_df=False
+        merged_candles_df: pd.DataFrame, params: BollingerParams, as_df=False
     ):
-        spot_close = spot_candles_df["close"].rename("s_close")
-        future_close = future_candles_df["close"].rename("f_close")
-        concat_df = pd.concat([spot_close, future_close], axis=1)
-        concat_df["basis"] = concat_df["f_close"] - concat_df["s_close"]
-        rolling = concat_df["basis"].rolling(params.length)
-        concat_df["ma"] = rolling.mean()
-        concat_df["std"] = rolling.std()
+        rolling = merged_candles_df["close"].rolling(params.length)
+        merged_candles_df["ma"] = rolling.mean()
+        merged_candles_df["std"] = rolling.std()
 
         if as_df:
             return (
-                concat_df["ma"] + params.std_mult * concat_df["std"],
-                concat_df["ma"] - params.std_mult * concat_df["std"],
+                merged_candles_df["ma"] + params.std_mult * merged_candles_df["std"],
+                merged_candles_df["ma"] - params.std_mult * merged_candles_df["std"],
             )
         else:
-            ma = concat_df["ma"].iloc[-1]
-            std = concat_df["std"].iloc[-1]
+            ma = merged_candles_df["ma"].iloc[-1]
+            std = merged_candles_df["std"].iloc[-1]
 
             upper_threshold = ma + params.std_mult * std
             lower_threshold = ma - params.std_mult * std
@@ -93,9 +89,13 @@ class Bollinger(BaseIndicator):
 
         spot_df = self.candles_to_df(spot_candles)
         future_df = self.candles_to_df(future_candles)
+        spot_close = spot_df["close"].rename("s_close")
+        future_close = future_df["close"].rename("f_close")
+        merged_df = pd.concat([spot_close, future_close], axis=1)
+        merged_df["close"] = merged_df["f_close"] - merged_df["s_close"]
 
         upper_threshold, lower_threshold = self.compute_thresholds(
-            spot_df, future_df, self.params
+            merged_df, self.params
         )
 
         self._upper_threshold = Decimal(str(upper_threshold))

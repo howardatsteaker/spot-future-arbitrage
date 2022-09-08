@@ -1161,7 +1161,12 @@ class SubProcess:
         sys.exit(0)
 
 
-def run_sub_process(hedge_pair: FtxHedgePair, config: Config, conn: Connection, rate_limiter: RateLimiter):
+def run_sub_process(
+    hedge_pair: FtxHedgePair,
+    config: Config,
+    conn: Connection,
+    rate_limiter: RateLimiter,
+):
     asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
     sub_process = SubProcess(hedge_pair, config, conn, rate_limiter)
     sub_process.logger.info(f"start to run {hedge_pair.coin} process")

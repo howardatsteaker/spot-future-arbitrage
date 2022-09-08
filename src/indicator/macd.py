@@ -1,3 +1,4 @@
+import asyncio
 import time
 from dataclasses import dataclass
 from datetime import datetime
@@ -71,41 +72,47 @@ class MACD(BaseIndicator):
             self.params: MACDParams = params
 
     @staticmethod
-    def compute_thresholds(
-        spot_candles_df, future_candles_df, params: MACDParams, as_df=False
-    ):
-        spot_close = spot_candles_df["close"].rename("s_close")
-        future_close = future_candles_df["close"].rename("f_close")
-        concat_df = pd.concat([spot_close, future_close], axis=1)
-        concat_df["basis"] = concat_df["f_close"] - concat_df["s_close"]
-        concat_df["fast_ema"] = concat_df["basis"].ewm(span=params.fast_length).mean()
-        concat_df["slow_ema"] = concat_df["basis"].ewm(span=params.slow_length).mean()
-        concat_df["dif"] = concat_df["fast_ema"] - concat_df["slow_ema"]
-        concat_df["macd"] = concat_df["dif"].ewm(span=params.signal_length).mean()
-        concat_df["dif_sub_macd"] = concat_df["dif"] - concat_df["macd"]
-        concat_df["std"] = concat_df["dif_sub_macd"].rolling(params.std_length).std()
+    def compute_thresholds(merged_candles_df, params: MACDParams, as_df=False):
+        merged_candles_df["fast_ema"] = (
+            merged_candles_df["close"].ewm(span=params.fast_length).mean()
+        )
+        merged_candles_df["slow_ema"] = (
+            merged_candles_df["close"].ewm(span=params.slow_length).mean()
+        )
+        merged_candles_df["dif"] = (
+            merged_candles_df["fast_ema"] - merged_candles_df["slow_ema"]
+        )
+        merged_candles_df["macd"] = (
+            merged_candles_df["dif"].ewm(span=params.signal_length).mean()
+        )
+        merged_candles_df["dif_sub_macd"] = (
+            merged_candles_df["dif"] - merged_candles_df["macd"]
+        )
+        merged_candles_df["std"] = (
+            merged_candles_df["dif_sub_macd"].rolling(params.std_length).std()
+        )
 
-        last_fast = concat_df["fast_ema"].iloc[-1]
-        last_slow = concat_df["slow_ema"].iloc[-1]
-        last_macd = concat_df["macd"].iloc[-1]
-        std = concat_df["std"].iloc[-1]
+        last_fast = merged_candles_df["fast_ema"].iloc[-1]
+        last_slow = merged_candles_df["slow_ema"].iloc[-1]
+        last_macd = merged_candles_df["macd"].iloc[-1]
+        std = merged_candles_df["std"].iloc[-1]
 
         if as_df:
             upper_threshold_dt = (
-                (params.std_mult * concat_df["std"]) / (1 - params.alpha_macd)
-                + concat_df["macd"]
+                (params.std_mult * merged_candles_df["std"]) / (1 - params.alpha_macd)
+                + merged_candles_df["macd"]
                 - (
-                    (1 - params.alpha_fast) * concat_df["fast_ema"]
-                    - (1 - params.alpha_slow) * concat_df["slow_ema"]
+                    (1 - params.alpha_fast) * merged_candles_df["fast_ema"]
+                    - (1 - params.alpha_slow) * merged_candles_df["slow_ema"]
                 )
             ) / (params.alpha_fast - params.alpha_slow)
 
             lower_threshold_dt = (
-                (-params.std_mult * concat_df["std"]) / (1 - params.alpha_macd)
-                + concat_df["macd"]
+                (-params.std_mult * merged_candles_df["std"]) / (1 - params.alpha_macd)
+                + merged_candles_df["macd"]
                 - (
-                    (1 - params.alpha_fast) * concat_df["fast_ema"]
-                    - (1 - params.alpha_slow) * concat_df["slow_ema"]
+                    (1 - params.alpha_fast) * merged_candles_df["fast_ema"]
+                    - (1 - params.alpha_slow) * merged_candles_df["slow_ema"]
                 )
             ) / (params.alpha_fast - params.alpha_slow)
             return (upper_threshold_dt, lower_threshold_dt)
@@ -149,9 +156,13 @@ class MACD(BaseIndicator):
 
         spot_df = self.candles_to_df(spot_candles)
         future_df = self.candles_to_df(future_candles)
+        spot_close = spot_df["close"].rename("s_close")
+        future_close = future_df["close"].rename("f_close")
+        merged_df = pd.concat([spot_close, future_close], axis=1)
+        merged_df["close"] = merged_df["f_close"] - merged_df["s_close"]
 
         upper_threshold, lower_threshold = self.compute_thresholds(
-            spot_df, future_df, self.params
+            merged_df, self.params
         )
 
         self._upper_threshold = Decimal(str(upper_threshold))
