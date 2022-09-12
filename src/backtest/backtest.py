@@ -21,6 +21,11 @@ def run_backtest(backtest_indicator: BaseIndicator):
         backtest_util.get_future_klines_path(backtest_indicator)
     )
 
+    spot_close = spot_klines["close"].rename("s_close")
+    future_close = future_klines["close"].rename("f_close")
+    merged_klines = pd.concat([spot_close, future_close], axis=1)
+    merged_klines["close"] = merged_klines["f_close"] - merged_klines["s_close"]
+
     save_path = backtest_indicator.get_save_path()
     save_path_obj = pathlib.Path(save_path)
     summary_path_obj = save_path_obj / "summary.json"
@@ -34,7 +39,7 @@ def run_backtest(backtest_indicator: BaseIndicator):
         print(f"params: {params}")
 
         upper_threshold_df, lower_threshold_df = backtest_indicator.compute_thresholds(
-            spot_klines, future_klines, params, as_df=True
+            merged_klines, params, as_df=True
         )
 
         # run backtest

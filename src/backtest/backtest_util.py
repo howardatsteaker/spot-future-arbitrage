@@ -350,3 +350,20 @@ def get_future_klines_path(indicator_backtest: BaseIndicator):
         + str(resolution_to_dir_name(indicator_backtest.kline_resolution))
         + ".parquet"
     )
+
+
+def get_merged_klines_path(indicator_backtest: BaseIndicator):
+    if not _check_backtest_attr(indicator_backtest):
+        raise ValueError("Not backtest Indicator")
+    return (
+        indicator_backtest.config.save_dir
+        + "merged_kline/"
+        + FtxHedgePair.to_dir_name(indicator_backtest.hedge_pair.future)
+        + "/"
+        + str(indicator_backtest.config.start_timestamp)
+        + "_"
+        + str(indicator_backtest.config.end_timestamp)
+        + "_"
+        + str(resolution_to_dir_name(indicator_backtest.kline_resolution))
+        + ".parquet"
+    )

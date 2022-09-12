@@ -83,7 +83,9 @@ def save_merged_kline(
     save_path: str = "local/merged_kline",
 ):
     future_path_name = future.replace("-", "_")
-    filename = os.path.join(save_path, future_path_name, f"{start_ts}_{end_ts}.parquet")
+    filename = os.path.join(
+        save_path, future_path_name, f"{start_ts}_{end_ts}_{resolution}.parquet"
+    )
     path = pathlib.Path(filename)
     if not path.parent.exists():
         path.parent.mkdir(parents=True, exist_ok=True)
