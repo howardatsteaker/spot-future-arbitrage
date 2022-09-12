@@ -487,7 +487,12 @@ class FtxExchange:
             all_trades.extend([trade for trade in trades if trade["id"] not in id_set])
             id_set |= set([trade["id"] for trade in trades])
             end_time = (
-                min([dateutil.parser.parse(trade["time"]).timestamp() for trade in trades])
+                min(
+                    [
+                        dateutil.parser.parse(trade["time"]).timestamp()
+                        for trade in trades
+                    ]
+                )
                 - 0.000001
             )
 

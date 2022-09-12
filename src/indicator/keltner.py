@@ -42,9 +42,7 @@ class Keltner(BaseIndicator):
         self.hedge_pair = hedge_pair
         if not params:
             # default params
-            self.params: KeltnerParams = KeltnerParams(
-                length=20, mult=1.0
-            )
+            self.params: KeltnerParams = KeltnerParams(length=20, mult=1.0)
         else:
             self.params: KeltnerParams = params
 
@@ -63,7 +61,7 @@ class Keltner(BaseIndicator):
         ma = close.rolling(params.length).mean()
         upper_threshold = ma + params.mult * atr
         lower_threshold = ma - params.mult * atr
-        
+
         if as_df:
             return (
                 upper_threshold,
@@ -80,7 +78,7 @@ class Keltner(BaseIndicator):
         start_ts = end_ts - self.params.length * resolution.value
         spot_trades, future_trades = await asyncio.gather(
             client.get_trades(self.hedge_pair.spot, start_ts, end_ts),
-            client.get_trades(self.hedge_pair.future, start_ts, end_ts)
+            client.get_trades(self.hedge_pair.future, start_ts, end_ts),
         )
         await client.close()
         merged_df = self.merge_trades_to_candle_df(spot_trades, future_trades)
@@ -128,7 +126,9 @@ class Keltner(BaseIndicator):
         concat_df.dropna(inplace=True)
         concat_df = concat_df[concat_df["s_side"] != concat_df["f_side"]]
         concat_df["basis"] = concat_df["f_price"] - concat_df["s_price"]
-        resample: pd.DataFrame = concat_df.resample(self._kline_resolution.to_pandas_resample_rule()).agg({"basis": "ohlc"})
+        resample: pd.DataFrame = concat_df.resample(
+            self._kline_resolution.to_pandas_resample_rule()
+        ).agg({"basis": "ohlc"})
         resample = resample.droplevel(0, axis=1)
         resample.fillna(resample["close"].ffill())
         return resample
@@ -158,6 +158,4 @@ class KeltnerBacktest(Keltner):
         from_date_str = from_datatime.strftime("%Y%m%d")
         to_datatime = datetime.fromtimestamp(self.config.end_timestamp)
         to_data_str = to_datatime.strftime("%Y%m%d")
-        return (
-            f"local/backtest/keltner_{self.hedge_pair.coin}_{from_date_str}_{to_data_str}"
-        )
+        return f"local/backtest/keltner_{self.hedge_pair.coin}_{from_date_str}_{to_data_str}"

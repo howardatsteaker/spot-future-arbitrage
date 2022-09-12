@@ -42,19 +42,19 @@ class FtxCandleResolution(Enum):
 
     def to_pandas_resample_rule(self) -> str:
         if self is FtxCandleResolution.FIFTEEN_SECONDS:
-            return '15S'
+            return "15S"
         elif self is FtxCandleResolution.ONE_MINUTE:
-            return '1min'
+            return "1min"
         elif self is FtxCandleResolution.FIVE_MINUTES:
-            return '5min'
+            return "5min"
         elif self is FtxCandleResolution.FIFTEEN_MINUTES:
-            return '15min'
+            return "15min"
         elif self is FtxCandleResolution.ONE_HOUR:
-            return '1H'
+            return "1H"
         elif self is FtxCandleResolution.FOUR_HOURS:
-            return '4H'
+            return "4H"
         elif self is FtxCandleResolution.ONE_DAY:
-            return '1D'
+            return "1D"
 
 
 @dataclass
