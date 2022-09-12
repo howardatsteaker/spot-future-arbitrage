@@ -837,13 +837,22 @@ class SubProcess:
                             spot_order_msg.avg_fill_price
                             * self.collateral_weight.weight
                         )
-                        real_spot_margin = spot_order_msg.avg_fill_price / self.leverage_info.max_leverage
-                        real_spot_borrow_interest = spot_order_msg.avg_fill_price * self.ewma_interest_rate.hourly_rate * hours_to_expiry
+                        real_spot_margin = (
+                            spot_order_msg.avg_fill_price
+                            / self.leverage_info.max_leverage
+                        )
+                        real_spot_borrow_interest = (
+                            spot_order_msg.avg_fill_price
+                            * self.ewma_interest_rate.hourly_rate
+                            * hours_to_expiry
+                        )
                         real_fee = (
                             future_order_msg.avg_fill_price
                             + spot_order_msg.avg_fill_price
                         ) * self.fee_rate.taker_fee_rate
-                        real_profit = real_basis - 2 * real_fee - real_spot_borrow_interest
+                        real_profit = (
+                            real_basis - 2 * real_fee - real_spot_borrow_interest
+                        )
                         real_cost = (
                             spot_order_msg.avg_fill_price
                             + real_future_collateral_needed
