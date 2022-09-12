@@ -201,7 +201,108 @@ class SubProcess:
         self.logger.info(
             f"{self.hedge_pair.future} position size is {self.future_position_size}"
         )
+        self._check_size_valid()
         self._position_size_update_event.set()
+
+    def _check_size_valid(self):
+        """Check spot, future size is valid.
+        Only be called at the end of self._update_position_size()
+
+        Send alert message when:
+            1. spot size < 0
+            2. future size > 0
+            3. imbalance size between spot and future
+        """
+        if self.spot_position_size < 0:
+            self.logger.warning(
+                f"{self.hedge_pair.coin} has negative spot size {self.spot_position_size}",
+                slack=self.config.slack_config.enable,
+            )
+        if self.future_position_size > 0:
+            self.logger.warning(
+                f"{self.hedge_pair.future} has positive future size: {self.future_position_size}",
+                slack=self.config.slack_config.enable,
+            )
+        if self.spot_position_size >= 0 and self.future_position_size <= 0:
+            sum_size = self.spot_position_size + self.future_position_size
+            # too many spot, or too less future
+            if sum_size > self.combined_trading_rule.min_order_size:
+                rebalance_size = (
+                    sum_size
+                    // self.combined_trading_rule.min_order_size
+                    * self.combined_trading_rule.min_order_size
+                )
+                imbalance_log_str = f"{self.hedge_pair.coin} is imbalance in size [{self.spot_position_size}, {self.future_position_size}]."
+                # sell spot or future with higher price
+                spot_ticker = self.exchange.tickers[self.hedge_pair.spot]
+                future_ticker = self.exchange.tickers[self.hedge_pair.future]
+                spot_price = spot_ticker.bid
+                future_price = future_ticker.bid
+                if spot_price is None and future_price is None:
+                    self.logger.warning(
+                        f"{imbalance_log_str} Both spot and future price not get.",
+                        slack=self.config.slack_config.enable,
+                    )
+                elif spot_price is not None and future_price is None:
+                    self.logger.warning(
+                        f"{imbalance_log_str} Recommend to sell spot with size: {rebalance_size} at ${spot_price}",
+                        slack=self.config.slack_config.enable,
+                    )
+                elif spot_price is None and future_price is not None:
+                    self.logger.warning(
+                        f"{imbalance_log_str} Recommend to sell future with size: {rebalance_size} at ${future_price}",
+                        slack=self.config.slack_config.enable,
+                    )
+                else:
+                    if spot_price > future_price:
+                        self.logger.warning(
+                            f"{imbalance_log_str} Recommend to sell spot with size: {rebalance_size} at ${spot_price}",
+                            slack=self.config.slack_config.enable,
+                        )
+                    else:
+                        self.logger.warning(
+                            f"{imbalance_log_str} Recommend to sell future with size: {rebalance_size} at ${future_price}",
+                            slack=self.config.slack_config.enable,
+                        )
+            # too less spot, or too many future
+            elif sum_size < -self.combined_trading_rule.min_order_size:
+                rebalance_size = (
+                    (-sum_size)
+                    // self.combined_trading_rule.min_order_size
+                    * self.combined_trading_rule.min_order_size
+                )
+                imbalance_log_str = f"{self.hedge_pair.coin} is imbalance in size [{self.spot_position_size}, {self.future_position_size}]."
+                # buy spot or future with lower price
+                spot_ticker = self.exchange.tickers[self.hedge_pair.spot]
+                future_ticker = self.exchange.tickers[self.hedge_pair.future]
+                spot_price = spot_ticker.ask
+                future_price = future_ticker.ask
+                if spot_price is None and future_price is None:
+                    self.logger.warning(
+                        f"{imbalance_log_str} Both spot and future price not get.",
+                        slack=self.config.slack_config.enable,
+                    )
+                elif spot_price is not None and future_price is None:
+                    self.logger.warning(
+                        f"{imbalance_log_str} Recommend to buy spot with size: {rebalance_size} at ${spot_price}",
+                        slack=self.config.slack_config.enable,
+                    )
+                elif spot_price is None and future_price is not None:
+                    self.logger.warning(
+                        f"{imbalance_log_str} Recommend to buy future with size: {rebalance_size} at ${future_price}",
+                        slack=self.config.slack_config.enable,
+                    )
+                else:
+                    if spot_price < future_price:
+                        self.logger.warning(
+                            f"{imbalance_log_str} Recommend to buy spot with size: {rebalance_size} at ${spot_price}",
+                            slack=self.config.slack_config.enable,
+                        )
+                    else:
+                        self.logger.warning(
+                            f"{imbalance_log_str} Recommend to buy future with size: {rebalance_size} at ${future_price}",
+                            slack=self.config.slack_config.enable,
+                        )
 
     async def _update_entry_price(self):
         async with self._state_update_lock:
