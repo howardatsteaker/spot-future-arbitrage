@@ -465,6 +465,34 @@ class FtxExchange:
             error_msg = json_res["error"]
             ftx_throw_exception(error_msg)
 
+    async def get_trades(self, symbol: str, start_time: float, end_time: float):
+        client = self._get_rest_client()
+        all_trades = []
+        id_set = set()
+        while True:
+            url = (
+                self.REST_URL
+                + f"/markets/{symbol}/trades?start_time={start_time}&end_time={end_time}"
+            )
+
+            async with client.get(url) as res:
+                json_res = await res.json()
+            if json_res["success"]:
+                trades = json_res["result"]
+            else:
+                error_msg = json_res["error"]
+                ftx_throw_exception(error_msg)
+            if len(trades) == 0:
+                break
+            all_trades.extend([trade for trade in trades if trade["id"] not in id_set])
+            id_set |= set([trade["id"] for trade in trades])
+            end_time = (
+                min([dateutil.parser.parse(trade["time"]).timestamp() for trade in trades])
+                - 0.000001
+            )
+
+        return sorted(all_trades, key=lambda fill: dateutil.parser.parse(fill["time"]))
+
     def ws_register_order_channel(self):
         self._to_subscribe_order_channel = True
 
