@@ -41,6 +41,7 @@ strategy:
   release_mode: False  # if True, one can only close position. Openning new position is not allowed.
   open_fee_coverage_multiplier: 2.5  # to open new position, the basis should cover at least 2 times of the trading fee.
   max_open_budget: 500  # the maximum amount to open new positoin per iteration
+  cooldown_open_budget: 20  # open budget during cooldown period
 
 # the 'whitelist' key can be deleted, default includes all markets 
 whitelist:

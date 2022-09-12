@@ -531,9 +531,22 @@ class SubProcess:
         elif future_task in done:
             return TickerNotifyType.FUTURE
 
+    def _has_position(self):
+        return (
+            self.spot_position_size >= self.combined_trading_rule.min_order_size
+            and self.future_position_size <= -self.combined_trading_rule.min_order_size
+        )
+
     async def _request_for_budget(self):
-        if self._budget < self.config.max_open_budget:
-            fund_needed = self.config.max_open_budget - self._budget
+        # if has position, request more budget
+        if self._has_position():
+            max_open_budget = self.config.max_open_budget
+        # else, using cooldown budget
+        else:
+            max_open_budget = self.config.cooldown_open_budget
+        # send request to main process
+        if self._budget < max_open_budget:
+            fund_needed = max_open_budget - self._budget
             request = FtxFundRequestMessage(
                 coin=self.hedge_pair.coin,
                 fund_needed=fund_needed,
