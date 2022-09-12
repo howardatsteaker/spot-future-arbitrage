@@ -22,7 +22,7 @@ class RSIParams:
 
 
 class RSI(BaseIndicator):
-    """To use RSI Band indicator, one should set parameters in the yaml config file.
+    """To use RSI indicator, one should set parameters in the yaml config file.
     For example:
 
     indicator:
