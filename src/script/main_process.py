@@ -28,8 +28,8 @@ from src.exchange.ftx.ftx_data_type import (Ftx_EWMA_InterestRate,
                                             FtxOrderType, FtxTradingRule,
                                             FtxTradingRuleMessage, Side,
                                             TradeType)
-from src.script.fund_manager import FundManager
 from src.script.sub_process import run_sub_process
+from src.util.fund_manager import FundManager
 from src.util.rate_limit import RateLimiter
 from src.util.slack import SlackWrappedLogger
 
@@ -459,11 +459,6 @@ class MainProcess:
             try:
                 account_info = await self.exchange.get_account()
                 await self.fund_manager.update_account_state(account_info)
-                balances = await self.exchange.get_balances()
-                usd_info = next(b for b in balances if b["coin"] == "USD")
-                await self.fund_manager.update_usd_state(
-                    Decimal(str(usd_info["free"])), Decimal(str(usd_info["spotBorrow"]))
-                )
                 await asyncio.sleep(self.FUND_MANAGER_POLLING_INTERVAL)
             except asyncio.CancelledError:
                 raise
@@ -593,7 +588,7 @@ class MainProcess:
                 msg = conn.recv()
                 self.logger.debug(f"Get msg from {coin} child process: {msg}")
                 if type(msg) is FtxFundRequestMessage:
-                    response = await self.fund_manager.request_for_open(msg)
+                    response = await self.fund_manager.request_for_budget(msg)
                     conn.send(response)
                 elif type(msg) is FtxFundOpenFilledMessage:
                     await self.fund_manager.handle_open_order_filled(msg)

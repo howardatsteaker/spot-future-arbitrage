@@ -222,24 +222,20 @@ class FtxLeverageMessage:
 
 @dataclass
 class FtxFundRequestMessage:
-    id: uuid.UUID
+    coin: str
     fund_needed: Decimal
-    spot_notional_value: Decimal
 
 
 @dataclass
 class FtxFundResponseMessage:
-    id: uuid.UUID
-    approve: bool
+    coin: str
     fund_supply: Decimal
-    borrow: Decimal
 
 
 @dataclass
 class FtxFundOpenFilledMessage:
-    id: uuid.UUID
+    coin: str
     fund_used: Decimal
-    spot_notional_value: Decimal
 
 
 @dataclass
