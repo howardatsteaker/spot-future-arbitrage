@@ -15,16 +15,16 @@ from src.indicator.base_indicator import BaseIndicator
 
 
 @dataclass
-class DonchainParams:
+class DonchianParams:
     length: int
 
 
-class Donchain(BaseIndicator):
-    """To use Donchain indicator, one should set parameters in the yaml config file.
+class Donchian(BaseIndicator):
+    """To use Donchian indicator, one should set parameters in the yaml config file.
     For example:
 
     indicator:
-        name: 'donchain'
+        name: 'donchian'
         params:
             resolution: 3600  # Enum of (15, 60, 300, 900, 3600, 14400, 86400) in seconds
             length: 20
@@ -34,19 +34,19 @@ class Donchain(BaseIndicator):
         self,
         hedge_pair: FtxHedgePair,
         kline_resolution: FtxCandleResolution,
-        params: DonchainParams = None,
+        params: DonchianParams = None,
     ):
         super().__init__(kline_resolution)
         self.hedge_pair = hedge_pair
         if not params:
             # default params
-            self.params: DonchainParams = DonchainParams(length=20)
+            self.params: DonchianParams = DonchianParams(length=20)
         else:
-            self.params: DonchainParams = params
+            self.params: DonchianParams = params
 
     @staticmethod
     def compute_thresholds(
-        merged_candles_df: pd.DataFrame, params: DonchainParams, as_df=False
+        merged_candles_df: pd.DataFrame, params: DonchianParams, as_df=False
     ):
         rolling = merged_candles_df["close"].rolling(params.length)
         merged_candles_df["ma"] = rolling.mean()
@@ -107,7 +107,7 @@ class Donchain(BaseIndicator):
         return df
 
 
-class DonchainBacktest(Donchain):
+class DonchianBacktest(Donchian):
     def __init__(
         self,
         hedge_pair: FtxHedgePair,
@@ -117,11 +117,11 @@ class DonchainBacktest(Donchain):
         super().__init__(hedge_pair, kline_resolution)
         self.config = backtest_config
 
-    def generate_params(self) -> list[DonchainParams]:
+    def generate_params(self) -> list[DonchianParams]:
         params = []
         for length in np.arange(10, 50, 5):
             length = int(length)
-            params.append(DonchainParams(length=length))
+            params.append(DonchianParams(length=length))
         return params
 
     def get_save_path(self) -> str:
@@ -129,4 +129,4 @@ class DonchainBacktest(Donchain):
         from_date_str = from_datatime.strftime("%Y%m%d")
         to_datatime = datetime.fromtimestamp(self.config.end_timestamp)
         to_data_str = to_datatime.strftime("%Y%m%d")
-        return f"local/backtest/donchain_{self.hedge_pair.coin}_{from_date_str}_{to_data_str}"
+        return f"local/backtest/donchian_{self.hedge_pair.coin}_{from_date_str}_{to_data_str}"
