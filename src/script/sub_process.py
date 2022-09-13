@@ -566,6 +566,7 @@ class SubProcess:
                     self._ws_orders_events[order_id] = asyncio.Event()
                 if msg.status == FtxOrderStatus.CLOSED:
                     self._ws_orders_events[order_id].set()
+                    self._update_state_when_order_closed(msg)
             elif type(msg) is FtxEntryPriceRequestMessage:
                 market = msg.market
                 if market == self.hedge_pair.spot:
@@ -580,6 +581,40 @@ class SubProcess:
                     f"{self.hedge_pair.coin} receive unknown message: {msg}"
                 )
             self._main_process_notify_event.clear()
+
+    def _update_state_when_order_closed(self, msg: FtxOrderMessage):
+        if msg.filled_size == 0:
+            return
+        if msg.market == self.hedge_pair.spot:
+            if msg.side == Side.BUY:
+                new_size = self.spot_position_size + msg.filled_size
+                if self.spot_entry_price is None:
+                    self.spot_entry_price = msg.avg_fill_price
+                else:
+                    self.spot_entry_price = (
+                        self.spot_position_size * self.spot_entry_price
+                        + msg.filled_size * msg.avg_fill_price
+                    ) / new_size
+            else:
+                new_size = self.spot_position_size - msg.filled_size
+                if new_size == 0:
+                    self.spot_entry_price = None
+            self.spot_position_size = new_size
+        elif msg.market == self.hedge_pair.future:
+            if msg.side == Side.SELL:
+                new_size = self.future_position_size - msg.filled_size
+                if self.future_entry_price is None:
+                    self.future_entry_price = msg.avg_fill_price
+                else:
+                    self.future_entry_price = (
+                        self.future_position_size * self.future_position_size
+                        + msg.filled_size * msg.avg_fill_price
+                    ) / new_size
+            else:
+                new_size = self.future_position_size + msg.filled_size
+                if new_size == 0:
+                    self.future_entry_price = None
+            self.future_position_size = new_size
 
     async def _indicator_polling_loop(self):
         while True:
@@ -883,17 +918,6 @@ class SubProcess:
                         f"{self.hedge_pair.spot} market buy order {spot_order_id} closed but filled size is 0",
                         slack=self.config.slack_config.enable,
                     )
-                else:
-                    # update spot position size, entry price
-                    spot_new_size = self.spot_position_size + spot_order_msg.filled_size
-                    if self.spot_entry_price is None:
-                        self.spot_entry_price = spot_order_msg.avg_fill_price
-                    else:
-                        self.spot_entry_price = (
-                            self.spot_entry_price * self.spot_position_size
-                            + spot_order_msg.avg_fill_price * spot_order_msg.filled_size
-                        ) / spot_new_size
-                        self.spot_position_size = spot_new_size
 
             if future_result_ok:
                 if future_order_msg is None:
@@ -906,20 +930,6 @@ class SubProcess:
                         f"{self.hedge_pair.future} market sell order {future_order_id} closed but filled size is 0",
                         slack=self.config.slack_config.enable,
                     )
-                else:
-                    # update future position size, entry price
-                    future_new_size = (
-                        self.future_position_size - future_order_msg.filled_size
-                    )
-                    if self.future_entry_price is None:
-                        self.future_entry_price = future_order_msg.avg_fill_price
-                    else:
-                        self.future_entry_price = (
-                            self.future_entry_price * self.future_position_size
-                            + future_order_msg.avg_fill_price
-                            * future_order_msg.filled_size
-                        ) / future_new_size
-                        self.future_position_size = future_new_size
 
     async def _wait_order(self, order_id: str, timeout: float = 3.0) -> FtxOrderMessage:
         event = self._ws_orders_events.get(order_id)
@@ -952,6 +962,7 @@ class SubProcess:
             create_timestamp=dateutil.parser.parse(data["createdAt"]).timestamp(),
         )
         if order_msg.status == FtxOrderStatus.CLOSED:
+            self._update_state_when_order_closed(order_msg)
             return order_msg
         else:
             return None
@@ -1083,9 +1094,13 @@ class SubProcess:
         if close_basis <= 0:
             to_close = True
 
-        open_basis = self.future_entry_price - self.spot_entry_price
+        # hold the current value of entry price for later use, no matter how self state update
+        spot_entry_price = self.spot_entry_price
+        future_entry_price = self.future_entry_price
+
+        open_basis = future_entry_price - spot_entry_price
         open_fee = (
-            self.future_entry_price + self.spot_entry_price
+            future_entry_price + spot_entry_price
         ) * self.fee_rate.taker_fee_rate
         close_fee = (future_price + spot_price) * self.fee_rate.taker_fee_rate
         profit = open_basis - close_basis - open_fee - close_fee
@@ -1157,13 +1172,13 @@ class SubProcess:
                 else:
                     # log close pnl rate, apr
                     future_collateral_needed = (
-                        self.future_entry_price / self.leverage_info.max_leverage
+                        future_entry_price / self.leverage_info.max_leverage
                     )
                     spot_collateral_supplied = (
-                        self.spot_entry_price * self.collateral_weight.weight
+                        spot_entry_price * self.collateral_weight.weight
                     )
                     cost = (
-                        self.spot_entry_price
+                        spot_entry_price
                         + future_collateral_needed
                         - spot_collateral_supplied
                         + open_fee
@@ -1197,12 +1212,6 @@ class SubProcess:
                     f"{self.hedge_pair.spot} market sell order {spot_order_id} closed but filled size is 0",
                     slack=self.config.slack_config.enable,
                 )
-            else:
-                # update spot position size, entry price
-                spot_new_size = self.spot_position_size - spot_order_msg.filled_size
-                if spot_new_size == 0:
-                    self.spot_entry_price = None
-                self.spot_position_size = spot_new_size
 
         if future_result_ok:
             if future_order_msg is None:
@@ -1215,14 +1224,6 @@ class SubProcess:
                     f"{self.hedge_pair.future} market buy order {future_order_id} closed but filled size is 0",
                     slack=self.config.slack_config.enable,
                 )
-            else:
-                # update future position size, entry price
-                future_new_size = (
-                    self.future_position_size + future_order_msg.filled_size
-                )
-                if future_new_size == 0:
-                    self.future_entry_price = None
-                self.future_position_size = future_new_size
 
     async def open_position_loop(self):
         if not self.hedge_pair.can_open:
