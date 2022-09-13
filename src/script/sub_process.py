@@ -34,7 +34,8 @@ from src.exchange.ftx.ftx_data_type import (Ftx_EWMA_InterestRate,
                                             FtxOrderType, FtxTradingRule,
                                             FtxTradingRuleMessage, Side,
                                             TradeType)
-from src.exchange.ftx.ftx_error import ExchangeError, RateLimitExceeded
+from src.exchange.ftx.ftx_error import (AuthenticationError, ExchangeError,
+                                        RateLimitExceeded)
 from src.indicator.base_indicator import BaseIndicator
 from src.indicator.bollinger import Bollinger, BollingerParams
 from src.indicator.macd import MACD, MACDParams
@@ -1025,7 +1026,7 @@ class SubProcess:
                 ret = await self.exchange.place_market_order(
                     market, side, size, reduce_only=reduce_only
                 )
-            except RateLimitExceeded as error:
+            except (RateLimitExceeded, AuthenticationError) as error:
                 self.logger.warning(
                     f"Fail to place {market} market {side.value} order with size: {size}, attempt: {attempt}"
                 )
