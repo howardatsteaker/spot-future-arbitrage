@@ -17,12 +17,17 @@ class InvalidOrder(ExchangeError):
     pass
 
 
+class AuthenticationError(ExchangeError):
+    pass
+
+
 ftx_error_message_map = {
     "Not enough balances": InsufficientFunds,
     "Account does not have enough margin for order": InsufficientFunds,
     "Please slow down": RateLimitExceeded,
     "Do not send more than": RateLimitExceeded,
     "Invalid reduce-only order": InvalidOrder,
+    "Not logged in": AuthenticationError,
 }
 
 
