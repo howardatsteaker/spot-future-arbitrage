@@ -202,10 +202,10 @@ class SubProcess:
         self.logger.info(
             f"{self.hedge_pair.future} position size is {self.future_position_size}"
         )
-        self._check_size_valid()
+        await self._check_size_valid()
         self._position_size_update_event.set()
 
-    def _check_size_valid(self):
+    async def _check_size_valid(self):
         """Check spot, future size is valid.
         Only be called at the end of self._update_position_size()
 
@@ -246,24 +246,42 @@ class SubProcess:
                     )
                 elif spot_price is not None and future_price is None:
                     self.logger.warning(
-                        f"{imbalance_log_str} Recommend to sell spot with size: {rebalance_size} at ${spot_price}",
+                        f"{imbalance_log_str} Try to sell spot with size: {rebalance_size} at ${spot_price}",
                         slack=self.config.slack_config.enable,
+                    )
+                    await self._place_market_order_with_retry(
+                        self.hedge_pair.spot,
+                        Side.SELL,
+                        rebalance_size,
+                        reduce_only=True,
                     )
                 elif spot_price is None and future_price is not None:
                     self.logger.warning(
-                        f"{imbalance_log_str} Recommend to sell future with size: {rebalance_size} at ${future_price}",
+                        f"{imbalance_log_str} Try to sell future with size: {rebalance_size} at ${future_price}",
                         slack=self.config.slack_config.enable,
+                    )
+                    await self._place_market_order_with_retry(
+                        self.hedge_pair.future, Side.SELL, rebalance_size
                     )
                 else:
                     if spot_price > future_price:
                         self.logger.warning(
-                            f"{imbalance_log_str} Recommend to sell spot with size: {rebalance_size} at ${spot_price}",
+                            f"{imbalance_log_str} Try to sell spot with size: {rebalance_size} at ${spot_price}",
                             slack=self.config.slack_config.enable,
+                        )
+                        await self._place_market_order_with_retry(
+                            self.hedge_pair.spot,
+                            Side.SELL,
+                            rebalance_size,
+                            reduce_only=True,
                         )
                     else:
                         self.logger.warning(
-                            f"{imbalance_log_str} Recommend to sell future with size: {rebalance_size} at ${future_price}",
+                            f"{imbalance_log_str} Try to sell future with size: {rebalance_size} at ${future_price}",
                             slack=self.config.slack_config.enable,
+                        )
+                        await self._place_market_order_with_retry(
+                            self.hedge_pair.future, Side.SELL, rebalance_size
                         )
             # too less spot, or too many future
             elif sum_size < -self.combined_trading_rule.min_order_size:
@@ -285,24 +303,42 @@ class SubProcess:
                     )
                 elif spot_price is not None and future_price is None:
                     self.logger.warning(
-                        f"{imbalance_log_str} Recommend to buy spot with size: {rebalance_size} at ${spot_price}",
+                        f"{imbalance_log_str} Try to buy spot with size: {rebalance_size} at ${spot_price}",
                         slack=self.config.slack_config.enable,
+                    )
+                    await self._place_market_order_with_retry(
+                        self.hedge_pair.spot, Side.BUY, rebalance_size
                     )
                 elif spot_price is None and future_price is not None:
                     self.logger.warning(
-                        f"{imbalance_log_str} Recommend to buy future with size: {rebalance_size} at ${future_price}",
+                        f"{imbalance_log_str} Try to buy future with size: {rebalance_size} at ${future_price}",
                         slack=self.config.slack_config.enable,
+                    )
+                    await self._place_market_order_with_retry(
+                        self.hedge_pair.future,
+                        Side.BUY,
+                        rebalance_size,
+                        reduce_only=True,
                     )
                 else:
                     if spot_price < future_price:
                         self.logger.warning(
-                            f"{imbalance_log_str} Recommend to buy spot with size: {rebalance_size} at ${spot_price}",
+                            f"{imbalance_log_str} Try to buy spot with size: {rebalance_size} at ${spot_price}",
                             slack=self.config.slack_config.enable,
+                        )
+                        await self._place_market_order_with_retry(
+                            self.hedge_pair.spot, Side.BUY, rebalance_size
                         )
                     else:
                         self.logger.warning(
-                            f"{imbalance_log_str} Recommend to buy future with size: {rebalance_size} at ${future_price}",
+                            f"{imbalance_log_str} Try to buy future with size: {rebalance_size} at ${future_price}",
                             slack=self.config.slack_config.enable,
+                        )
+                        await self._place_market_order_with_retry(
+                            self.hedge_pair.future,
+                            Side.BUY,
+                            rebalance_size,
+                            reduce_only=True,
                         )
 
     async def _update_entry_price(self):
