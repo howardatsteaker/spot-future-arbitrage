@@ -644,7 +644,7 @@ class SubProcess:
                     self.future_entry_price = msg.avg_fill_price
                 else:
                     self.future_entry_price = (
-                        self.future_position_size * self.future_position_size
+                        self.future_position_size * self.future_entry_price
                         + msg.filled_size * msg.avg_fill_price
                     ) / new_size
             else:
