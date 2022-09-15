@@ -54,19 +54,23 @@ class Bollinger(BaseIndicator):
         merged_candles_df["ma"] = rolling.mean()
         merged_candles_df["std"] = rolling.std()
 
+        upper_threshold_df = (
+            merged_candles_df["ma"] + params.std_mult * merged_candles_df["std"]
+        )
+        lower_threshold_df = (
+            merged_candles_df["ma"] - params.std_mult * merged_candles_df["std"]
+        )
+
         if as_df:
             return (
-                merged_candles_df["ma"] + params.std_mult * merged_candles_df["std"],
-                merged_candles_df["ma"] - params.std_mult * merged_candles_df["std"],
+                upper_threshold_df,
+                lower_threshold_df,
             )
         else:
-            ma = merged_candles_df["ma"].iloc[-1]
-            std = merged_candles_df["std"].iloc[-1]
-
-            upper_threshold = ma + params.std_mult * std
-            lower_threshold = ma - params.std_mult * std
-
-            return upper_threshold, lower_threshold
+            return (
+                upper_threshold_df.iloc[-1],
+                lower_threshold_df.iloc[-1],
+            )
 
     # for live trade usage
     async def update_indicator_info(self):
@@ -123,7 +127,7 @@ class BollingerBacktest(Bollinger):
 
     def generate_params(self) -> list[BollingerParams]:
         params = []
-        for boll_mult in np.arange(0.8, 2.5, 0.1):
+        for boll_mult in np.arange(0.8, 1.9, 0.1):
             boll_mult = round(boll_mult, 1)
             for length in np.arange(10, 50, 5):
                 length = int(length)

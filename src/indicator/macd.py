@@ -1,4 +1,3 @@
-import asyncio
 import time
 from dataclasses import dataclass
 from datetime import datetime
@@ -92,49 +91,28 @@ class MACD(BaseIndicator):
             merged_candles_df["dif_sub_macd"].rolling(params.std_length).std()
         )
 
-        last_fast = merged_candles_df["fast_ema"].iloc[-1]
-        last_slow = merged_candles_df["slow_ema"].iloc[-1]
-        last_macd = merged_candles_df["macd"].iloc[-1]
-        std = merged_candles_df["std"].iloc[-1]
+        upper_threshold_df = (
+            (params.std_mult * merged_candles_df["std"]) / (1 - params.alpha_macd)
+            + merged_candles_df["macd"]
+            - (
+                (1 - params.alpha_fast) * merged_candles_df["fast_ema"]
+                - (1 - params.alpha_slow) * merged_candles_df["slow_ema"]
+            )
+        ) / (params.alpha_fast - params.alpha_slow)
+
+        lower_threshold_df = (
+            (-params.std_mult * merged_candles_df["std"]) / (1 - params.alpha_macd)
+            + merged_candles_df["macd"]
+            - (
+                (1 - params.alpha_fast) * merged_candles_df["fast_ema"]
+                - (1 - params.alpha_slow) * merged_candles_df["slow_ema"]
+            )
+        ) / (params.alpha_fast - params.alpha_slow)
 
         if as_df:
-            upper_threshold_dt = (
-                (params.std_mult * merged_candles_df["std"]) / (1 - params.alpha_macd)
-                + merged_candles_df["macd"]
-                - (
-                    (1 - params.alpha_fast) * merged_candles_df["fast_ema"]
-                    - (1 - params.alpha_slow) * merged_candles_df["slow_ema"]
-                )
-            ) / (params.alpha_fast - params.alpha_slow)
-
-            lower_threshold_dt = (
-                (-params.std_mult * merged_candles_df["std"]) / (1 - params.alpha_macd)
-                + merged_candles_df["macd"]
-                - (
-                    (1 - params.alpha_fast) * merged_candles_df["fast_ema"]
-                    - (1 - params.alpha_slow) * merged_candles_df["slow_ema"]
-                )
-            ) / (params.alpha_fast - params.alpha_slow)
-            return (upper_threshold_dt, lower_threshold_dt)
-
-        upper_threshold = (
-            (params.std_mult * std) / (1 - params.alpha_macd)
-            + last_macd
-            - (
-                (1 - params.alpha_fast) * last_fast
-                - (1 - params.alpha_slow) * last_slow
-            )
-        ) / (params.alpha_fast - params.alpha_slow)
-        lower_threshold = (
-            (-params.std_mult * std) / (1 - params.alpha_macd)
-            + last_macd
-            - (
-                (1 - params.alpha_fast) * last_fast
-                - (1 - params.alpha_slow) * last_slow
-            )
-        ) / (params.alpha_fast - params.alpha_slow)
-
-        return upper_threshold, lower_threshold
+            return (upper_threshold_df, lower_threshold_df)
+        else:
+            return (upper_threshold_df.iloc[-1], lower_threshold_df.iloc[-1])
 
     async def update_indicator_info(self):
         client = FtxExchange("", "")
