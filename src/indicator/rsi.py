@@ -143,9 +143,9 @@ class RSIBacktest(RSI):
 
     def generate_params(self) -> list[RSIParams]:
         params = []
-        for length in np.arange(10, 50, 5):
+        for length in np.arange(7, 28, 7):
             length = int(length)
-            for lower_limit, upper_limit in zip(range(5, 40, 5), range(95, 60, -5)):
+            for lower_limit, upper_limit in zip(range(15, 40, 5), range(75, 60, -5)):
                 params.append(
                     RSIParams(
                         length=length, lower_limit=lower_limit, upper_limit=upper_limit

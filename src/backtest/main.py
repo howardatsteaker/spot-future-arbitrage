@@ -4,6 +4,8 @@ from src.backtest.backtest_util import resolution_to_dir_name
 from src.exchange.ftx.ftx_data_type import FtxCandleResolution
 from src.indicator.bollinger import BollingerBacktest
 from src.indicator.macd import MACDBacktest
+from src.indicator.macd_bollinger import MACDBollingerBacktest
+from src.indicator.rsi import RSIBacktest
 
 from ..exchange.ftx.ftx_data_type import FtxHedgePair
 from .backtest import run_backtest
@@ -17,7 +19,12 @@ def main():
     trades_dir = "local/trades/"
 
     class_title = "Choose Strategy Class:"
-    class_options = [BollingerBacktest, MACDBacktest]
+    class_options = [
+        BollingerBacktest,
+        MACDBacktest,
+        MACDBollingerBacktest,
+        RSIBacktest,
+    ]
 
     class_option, _ = pick(class_options, class_title, indicator="=>")
     backtest_class = class_option
