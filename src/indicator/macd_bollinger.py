@@ -256,4 +256,4 @@ class MACDBollingerBacktest(MACDBollinger):
         from_date_str = from_datatime.strftime("%Y%m%d")
         to_datatime = datetime.fromtimestamp(self.config.end_timestamp)
         to_data_str = to_datatime.strftime("%Y%m%d")
-        return f"local/backtest/macd_boll_{self.hedge_pair.coin}_{from_date_str}_{to_data_str}"
+        return f"local/backtest/macd_boll_{self.hedge_pair.future}_{from_date_str}_{to_data_str}"
