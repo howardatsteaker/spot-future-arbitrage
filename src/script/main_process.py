@@ -4,11 +4,16 @@ import multiprocessing as mp
 import pathlib
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor
 from decimal import Decimal
 from multiprocessing.connection import Connection
 from typing import Dict, List, Tuple
 
 import dateutil.parser
+from funding_service_client.constants import (WORKER_STATUS_FINISH,
+                                              WORKER_STATUS_PROC)
+from funding_service_client.fs_client import FSClient
+from funding_service_client.fs_exception import InsufficientBalanceError
 
 from src.common import Config, Exchange, to_decimal_or_none
 from src.exchange.ftx.ftx_client import FtxExchange
@@ -43,6 +48,7 @@ class MainProcess:
     FUND_MANAGER_POLLING_INTERVAL = 3
     RELEASE_DEAD_SUB_PROCESS_INTERVAL = 300
     LOG_SUMMARY_INTERVAL = 3600
+    FUNDING_SERVICE_INTERVAL = 600
 
     def __init__(self, config: Config):
         self.config: Config = config
@@ -93,6 +99,7 @@ class MainProcess:
             self._fund_manager_polling_task: asyncio.Task = None
             self._release_dead_sub_process_loop_task: asyncio.Task = None
             self._log_summary_polling_task: asyncio.Task = None
+            self._apply_funding_service_task: asyncio.Task = None
 
             # websocket
             self.exchange.ws_register_order_channel()
@@ -105,6 +112,9 @@ class MainProcess:
             interval = config.rate_limit_config.interval
             limit = config.rate_limit_config.limit
             self.rate_limiter = RateLimiter(self.rate_limiter_manager, interval, limit)
+
+            # funding service
+            self._fs_client: FSClient = None
 
     def _init_get_logger(self):
         log = self.config.log
@@ -197,6 +207,10 @@ class MainProcess:
             self._log_summary_polling_task = asyncio.create_task(
                 self._log_summary_polling_loop()
             )
+        if self._apply_funding_service_task is None:
+            self._apply_funding_service_task = asyncio.create_task(
+                self._apply_funding_service_loop()
+            )
 
     def stop_network(self):
         if self._market_status_polling_task is not None:
@@ -232,6 +246,9 @@ class MainProcess:
         if self._log_summary_polling_task is not None:
             self._log_summary_polling_task.cancel()
             self._log_summary_polling_task = None
+        if self._apply_funding_service_task is not None:
+            self._apply_funding_service_task.cancel()
+            self._apply_funding_service_task = None
         self._stop_all_sub_process_listen_tasks()
         self._stop_all_sub_processes()
 
@@ -782,6 +799,134 @@ class MainProcess:
                         slack=self.config.slack_config.enable,
                     )
                     await asyncio.sleep(10)
+        except asyncio.CancelledError:
+            raise
+
+    def _apply_funding_service(self, available_usd_for_withdraw: Decimal):
+        if not self.config.funding_service_config.enable:
+            return
+        if self._fs_client is None:
+            self._fs_client = FSClient(
+                subaccount=self.config.subaccount_name,
+                exchange="ftx",
+                api_key=self.config.api_key,
+            )
+        current_leverage: Decimal = self.leverage_info.current_leverage
+        position: Decimal = self.leverage_info.position_value
+        account_value: Decimal = self.leverage_info.account_value
+        target_leverage: Decimal = self.config.funding_service_config.target_leverage
+        if current_leverage > self.config.funding_service_config.leverage_upper_bound:
+            try:
+                funding_account_usd_info: dict = (
+                    self._fs_client.get_funding_account_balance_by_coin("USD")
+                )
+                funding_account_usd_balance: Decimal = Decimal(
+                    str(funding_account_usd_info["balance"])
+                )
+            except Exception:
+                self.logger.error(
+                    "Unexpected error while request funding account USD balance",
+                    exc_info=True,
+                    slack=self.config.slack_config.enable,
+                )
+                return
+            deposit_amount: Decimal = (position - target_leverage * account_value) / (
+                target_leverage + 1
+            )
+            deposit_amount = min(deposit_amount, funding_account_usd_balance)
+            if deposit_amount > self.config.funding_service_config.min_deposit_amount:
+                try:
+                    resp = self._fs_client.request_deposit(
+                        "USD", round(float(deposit_amount), 2)
+                    )
+                except (InsufficientBalanceError, Exception) as error:
+                    self.logger.error(
+                        f"Unexpected error while apply funding service deposit: {error}",
+                        exc_info=True,
+                        slack=self.config.slack_config.enable,
+                    )
+                else:
+                    time.sleep(1)
+                    if WORKER_STATUS_FINISH == self._fs_client.get_worker_status(
+                        resp["worker_id"]
+                    ):
+                        self.logger.info(
+                            f"Funding service deposit ${deposit_amount} Completed",
+                            slack=self.config.slack_config.enable,
+                        )
+                    elif WORKER_STATUS_PROC == self._fs_client.get_worker_status(
+                        resp["worker_id"]
+                    ):
+                        self.logger.warning(
+                            "Funding service deposit is working in progress",
+                            slack=self.config.slack_config.enable,
+                        )
+        elif current_leverage < self.config.funding_service_config.leverage_lower_bound:
+            available_usd_for_withdraw: Decimal = max(
+                0,
+                available_usd_for_withdraw
+                - self.config.funding_service_config.min_remain,
+            )
+            withdraw_amount: Decimal = (target_leverage * account_value - position) / (
+                target_leverage + 1
+            )
+            withdraw_amount = min(withdraw_amount, available_usd_for_withdraw)
+            if withdraw_amount > self.config.funding_service_config.min_withdraw_amount:
+                try:
+                    resp = self._fs_client.request_withdraw(
+                        "USD", round(float(withdraw_amount), 2)
+                    )
+                except (InsufficientBalanceError, Exception) as error:
+                    self.logger.error(
+                        f"Funding service failed to withdraw ${withdraw_amount}: {error}",
+                        exc_info=True,
+                        slack=self.config.slack_config.enable,
+                    )
+                else:
+                    time.sleep(1)
+                    if WORKER_STATUS_FINISH == self._fs_client.get_worker_status(
+                        resp["worker_id"]
+                    ):
+                        self.logger.info(
+                            f"Funding service withdraw ${withdraw_amount} completed",
+                            slack=self.config.slack_config.enable,
+                        )
+                    elif WORKER_STATUS_PROC == self._fs_client.get_worker_status(
+                        resp["worker_id"]
+                    ):
+                        self.logger.warning(
+                            "Funding service withdraw is working in progress",
+                            slack=self.config.slack_config.enable,
+                        )
+
+    async def _apply_funding_service_loop(self):
+        await self._account_info_ready_event.wait()
+        try:
+            while True:
+                try:
+                    balances: List[dict] = await self.exchange.get_balances()
+                    usd_info: dict = next(b for b in balances if b["coin"] == "USD")
+                    available_usd_for_withdraw: Decimal = Decimal(
+                        str(usd_info["availableForWithdrawal"])
+                    )
+
+                    # self._apply_funding_service() is not an awaitable function
+                    # so run it in a ThreadPoolExecutor
+                    loop = asyncio.get_event_loop()
+                    with ThreadPoolExecutor() as pool:
+                        await loop.run_in_executor(
+                            pool,
+                            self._apply_funding_service,
+                            available_usd_for_withdraw,
+                        )
+                except Exception:
+                    self.logger.error(
+                        f"Unexpected error while apply funding service",
+                        exc_info=True,
+                        slack=self.config.slack_config.enable,
+                    )
+                finally:
+                    await asyncio.sleep(self.FUNDING_SERVICE_INTERVAL)
         except asyncio.CancelledError:
             raise
 

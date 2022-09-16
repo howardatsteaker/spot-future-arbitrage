@@ -61,3 +61,12 @@ slack:
 rate_limit:
   interval: 0.2
   limit: 7
+
+funding_service:
+  enable: True
+  target_leverage: 2.7
+  leverage_upper_bound: 2.85
+  leverage_lower_bound: 2.5
+  min_deposit_amount: 5000
+  min_withdraw_amount: 5000
+  min_remain: 2000

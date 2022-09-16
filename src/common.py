@@ -7,6 +7,7 @@ from typing import List
 
 import yaml
 
+from src.util.funding_service import FundingServiceConfig
 from src.util.rate_limit import RateLimitConfig
 from src.util.slack import SlackConfig
 
@@ -59,6 +60,7 @@ class Config:
         blacklist: List[str],
         slack_config: SlackConfig,
         rate_limit_config: RateLimitConfig,
+        funding_service_config: FundingServiceConfig,
     ):
         self.exchange = exchange
         self.api_key = api_key
@@ -96,6 +98,7 @@ class Config:
         self.blacklist = blacklist
         self.slack_config = slack_config
         self.rate_limit_config = rate_limit_config
+        self.funding_service_config = funding_service_config
 
     @classmethod
     def from_yaml(cls, file_path: str) -> Config:
@@ -154,6 +157,25 @@ class Config:
             rate_limit_config=RateLimitConfig(
                 interval=data["rate_limit"]["interval"],
                 limit=data["rate_limit"]["limit"],
+            ),
+            funding_service_config=FundingServiceConfig(
+                enable=data["funding_service"]["enable"],
+                target_leverage=Decimal(
+                    str(data["funding_service"]["target_leverage"])
+                ),
+                leverage_upper_bound=Decimal(
+                    str(data["funding_service"]["leverage_upper_bound"])
+                ),
+                leverage_lower_bound=Decimal(
+                    str(data["funding_service"]["leverage_lower_bound"])
+                ),
+                min_deposit_amount=Decimal(
+                    str(data["funding_service"]["min_deposit_amount"])
+                ),
+                min_withdraw_amount=Decimal(
+                    str(data["funding_service"]["min_withdraw_amount"])
+                ),
+                min_remain=Decimal(str(data["funding_service"]["min_remain"])),
             ),
         )
 
