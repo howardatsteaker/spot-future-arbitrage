@@ -4,6 +4,7 @@ import pathlib
 import sys
 import time
 from dataclasses import dataclass
+from datetime import datetime
 from decimal import Decimal
 from enum import Enum
 from multiprocessing.connection import Connection
@@ -12,7 +13,9 @@ from typing import Dict, List
 
 import dateutil.parser
 import uvloop
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from cachetools import TTLCache
+from tzlocal import get_localzone_name
 
 from src.common import Config
 from src.exchange.ftx.ftx_client import FtxExchange
@@ -55,6 +58,7 @@ class TickerNotifyType(Enum):
 
 class SubProcess:
     ENTRY_PRICE_POLLING_INTERVAL = 3600
+    MIN_SETTLE_INTERVAL = 2
     OTC_CLEAN_UP_INTERVAL = 3600
 
     def __init__(
@@ -170,6 +174,7 @@ class SubProcess:
         logging.basicConfig(level=level, handlers=handlers)
         logger = logging.getLogger()
         logging.getLogger("asyncio").setLevel(logging.WARNING)
+        logging.getLogger("apscheduler").setLevel(logging.WARNING)
         logger = SlackWrappedLogger(
             logger,
             {
@@ -1365,6 +1370,58 @@ class SubProcess:
                     slack=self.config.slack_config.enable,
                 )
                 await asyncio.sleep(5)
+
+        await self._settle_spot()
+
+    async def _settle_spot(self):
+        """Sell spot during the one hour interval before the future get expired"""
+        await self._update_position_size()
+        spot_size = self.spot_position_size
+        min_order_size = self.spot_trading_rule.min_order_size
+        if spot_size <= 0:
+            return
+        # one hour before expiry
+        settle_start_ts = self.future_expiry_ts - 3600
+
+        # compute number of settlements
+        num_settle = int(spot_size // min_order_size)
+        max_num_settle = int(3600 // self.MIN_SETTLE_INTERVAL)
+        num_settle = min(num_settle, max_num_settle)
+        interval: float = 3600 / num_settle
+        settle_size: Decimal = (
+            (spot_size / num_settle) // min_order_size * min_order_size
+        )
+        residual_size: Decimal = spot_size - settle_size * num_settle
+        num_residual_settle: int = int(residual_size / min_order_size)
+        if num_residual_settle < num_settle - num_residual_settle:
+            sizes = [settle_size, settle_size + min_order_size] * num_residual_settle
+            sizes.extend([settle_size] * (num_settle - len(sizes)))
+        else:
+            sizes = [settle_size, settle_size + min_order_size] * (
+                num_settle - num_residual_settle
+            )
+            sizes.extend([settle_size + min_order_size] * (num_settle - len(sizes)))
+
+        # schedule
+        timezone = get_localzone_name()
+        sched = AsyncIOScheduler(timezone=timezone)
+        for size in sizes:
+            start_dt = datetime.fromtimestamp(settle_start_ts)
+            sched.add_job(
+                self._place_market_order_with_retry,
+                "date",
+                run_date=start_dt,
+                kwargs={
+                    "market": self.hedge_pair.spot,
+                    "side": Side.SELL,
+                    "size": size,
+                    "reduce_only": True,
+                },
+            )
+            settle_start_ts += interval
+        sched.start()
+
+        await asyncio.sleep(self.future_expiry_ts - time.time() + 10)
 
     async def run(self):
         try:
