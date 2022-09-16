@@ -57,7 +57,8 @@ class FtxExchange:
             prepared = request.prepare()
             ts = int(time.time() * 1000)
             content_to_sign = f"{ts}{prepared.method}{prepared.path_url}".encode()
-            content_to_sign += prepared.body
+            if prepared.body:
+                content_to_sign += prepared.body
         else:
             request = Request(http_method, url)
             prepared = request.prepare()
@@ -497,6 +498,59 @@ class FtxExchange:
             )
 
         return sorted(all_trades, key=lambda fill: dateutil.parser.parse(fill["time"]))
+
+    async def request_quote(self, from_coin: str, to_coin: str, size: Decimal) -> str:
+        """Request for OTC quote
+
+        Returns quote id
+        """
+        client = self._get_rest_client()
+        url = self.REST_URL + "/otc/quotes"
+        data = {"fromCoin": from_coin, "toCoin": to_coin, "size": str(size)}
+        headers = self._gen_auth_header("POST", url, body=data)
+        async with client.post(url, headers=headers, json=data) as res:
+            json_res = await res.json()
+        if json_res["success"]:
+            result = json_res["result"]
+            quote_id = str(result["quoteId"])
+            return quote_id
+        else:
+            error_msg = json_res["error"]
+            ftx_throw_exception(error_msg)
+
+    async def accepte_quote(self, quote_id: str):
+        """Accept OTC quote"""
+        client = self._get_rest_client()
+        url = self.REST_URL + f"/otc/quotes/{quote_id}/accept"
+        headers = self._gen_auth_header("POST", url)
+        async with client.post(url, headers=headers) as res:
+            json_res = await res.json()
+        if json_res["success"]:
+            return
+        else:
+            error_msg = json_res["error"]
+            ftx_throw_exception(error_msg)
+
+    async def get_quote_status(self, quote_id: str):
+        """Accept OTC quote"""
+        client = self._get_rest_client()
+        url = self.REST_URL + f"/otc/quotes/{quote_id}"
+        headers = self._gen_auth_header("GET", url)
+        async with client.get(url, headers=headers) as res:
+            json_res = await res.json()
+        if json_res["success"]:
+            return json_res["result"]
+        else:
+            error_msg = json_res["error"]
+            ftx_throw_exception(error_msg)
+
+    async def place_otc_sell_order(self, from_coin: str, size: Decimal) -> dict:
+        assert from_coin != "USD", "Cannot sell USD for USD"
+        quote_id = await self.request_quote(from_coin, "USD", size)
+        await self.accepte_quote(quote_id)
+        await asyncio.sleep(1)
+        status = await self.get_quote_status(quote_id)
+        return status
 
     def ws_register_order_channel(self):
         self._to_subscribe_order_channel = True
