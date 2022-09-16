@@ -207,7 +207,10 @@ class MainProcess:
             self._log_summary_polling_task = asyncio.create_task(
                 self._log_summary_polling_loop()
             )
-        if self._apply_funding_service_task is None:
+        if (
+            self.config.funding_service_config.enable
+            and self._apply_funding_service_task is None
+        ):
             self._apply_funding_service_task = asyncio.create_task(
                 self._apply_funding_service_loop()
             )
