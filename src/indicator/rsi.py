@@ -93,7 +93,7 @@ class RSI(BaseIndicator):
         client = FtxExchange("", "")
         resolution = self._kline_resolution
         end_ts = (time.time() // resolution.value - 1) * resolution.value
-        start_ts = end_ts - self.params.length * resolution.value
+        start_ts = end_ts - 2 * self.params.length * resolution.value
         spot_candles = await client.get_candles(
             self.hedge_pair.spot, resolution, start_ts, end_ts
         )
@@ -143,9 +143,9 @@ class RSIBacktest(RSI):
 
     def generate_params(self) -> list[RSIParams]:
         params = []
-        for length in np.arange(10, 50, 5):
+        for length in np.arange(7, 28, 7):
             length = int(length)
-            for lower_limit, upper_limit in zip(range(5, 40, 5), range(95, 60, -5)):
+            for lower_limit, upper_limit in zip(range(15, 40, 5), range(75, 60, -5)):
                 params.append(
                     RSIParams(
                         length=length, lower_limit=lower_limit, upper_limit=upper_limit
@@ -159,5 +159,5 @@ class RSIBacktest(RSI):
         to_datatime = datetime.fromtimestamp(self.config.end_timestamp)
         to_data_str = to_datatime.strftime("%Y%m%d")
         return (
-            f"local/backtest/rsi_{self.hedge_pair.coin}_{from_date_str}_{to_data_str}"
+            f"local/backtest/rsi_{self.hedge_pair.future}_{from_date_str}_{to_data_str}"
         )

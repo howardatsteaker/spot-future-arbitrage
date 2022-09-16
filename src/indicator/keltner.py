@@ -1,3 +1,4 @@
+import asyncio
 import time
 from dataclasses import dataclass
 from datetime import datetime
@@ -75,7 +76,7 @@ class Keltner(BaseIndicator):
         client = FtxExchange("", "")
         resolution = self._kline_resolution
         end_ts = time.time() // resolution.value * resolution.value
-        start_ts = end_ts - self.params.length * resolution.value
+        start_ts = end_ts - 2 * self.params.length * resolution.value
         spot_trades, future_trades = await asyncio.gather(
             client.get_trades(self.hedge_pair.spot, start_ts, end_ts),
             client.get_trades(self.hedge_pair.future, start_ts, end_ts),
@@ -158,4 +159,4 @@ class KeltnerBacktest(Keltner):
         from_date_str = from_datatime.strftime("%Y%m%d")
         to_datatime = datetime.fromtimestamp(self.config.end_timestamp)
         to_data_str = to_datatime.strftime("%Y%m%d")
-        return f"local/backtest/keltner_{self.hedge_pair.coin}_{from_date_str}_{to_data_str}"
+        return f"local/backtest/keltner_{self.hedge_pair.future}_{from_date_str}_{to_data_str}"
