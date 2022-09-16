@@ -59,6 +59,7 @@ class TickerNotifyType(Enum):
 class SubProcess:
     ENTRY_PRICE_POLLING_INTERVAL = 3600
     MIN_SETTLE_INTERVAL = 2
+    OTC_CLEAN_UP_INTERVAL = 3600
 
     def __init__(
         self,
@@ -93,6 +94,7 @@ class SubProcess:
         self._listen_for_ws_task: asyncio.Task = None
         self._indicator_polling_loop_task: asyncio.Task = None
         self._entry_price_polling_loop_task: asyncio.Task = None
+        self._otc_clean_up_polling_loop_task: asyncio.Task = None
 
         self.spot_entry_price: Decimal = None
         self.future_entry_price: Decimal = None
@@ -527,6 +529,10 @@ class SubProcess:
             self._entry_price_polling_loop_task = asyncio.create_task(
                 self._entry_price_polling_loop()
             )
+        if self._otc_clean_up_polling_loop_task is None:
+            self._otc_clean_up_polling_loop_task = asyncio.create_task(
+                self._otc_clean_up_polling_loop()
+            )
         asyncio.create_task(self._init_update_future_expiry())
 
     def stop_network(self):
@@ -542,6 +548,9 @@ class SubProcess:
         if self._entry_price_polling_loop_task is not None:
             self._entry_price_polling_loop_task.cancel()
             self._entry_price_polling_loop_task = None
+        if self._otc_clean_up_polling_loop_task is not None:
+            self._otc_clean_up_polling_loop_task.cancel()
+            self._otc_clean_up_polling_loop_task = None
 
     async def _consume_main_process_msg(self):
         self._loop.add_reader(self.conn.fileno(), self._main_process_notify_event.set)
@@ -747,6 +756,46 @@ class SubProcess:
                 self._budget = response.fund_supply
             finally:
                 self._fund_manager_response_event.clear()
+
+    async def _otc_clean_up(self):
+        await self._position_size_update_event.wait()
+        spot_size = self.spot_position_size
+        if spot_size <= 0:
+            return
+        if self.spot_trading_rule is None:
+            return
+        coin = self.hedge_pair.coin
+        min_order_size = self.spot_trading_rule.min_order_size
+        sell_size = spot_size % min_order_size
+        if sell_size <= 0:
+            return
+        self.logger.debug(
+            f"OTC clean up -> try to sell {sell_size} {coin}",
+            slack=self.config.slack_config.enable,
+        )
+        result = await self.exchange.place_otc_sell_order(coin, sell_size)
+        filled_size = Decimal(str(result["cost"]))
+        self.logger.info(
+            f"OTC sell {filled_size} {result['fromCoin']} for {result['proceeds']} {result['toCoin']}",
+            slack=self.config.slack_config.enable,
+        )
+        self.spot_position_size -= filled_size
+
+    async def _otc_clean_up_polling_loop(self):
+        try:
+            while True:
+                try:
+                    await self._otc_clean_up()
+                except Exception:
+                    self.logger.error(
+                        f"{self.hedge_pair.coin} Error while execute OTC clean up.",
+                        exc_info=True,
+                        slack=self.config.slack_config.enable,
+                    )
+                finally:
+                    await asyncio.sleep(self.OTC_CLEAN_UP_INTERVAL)
+        except asyncio.CancelledError:
+            raise
 
     async def open_position(self):
         if self.ready:
