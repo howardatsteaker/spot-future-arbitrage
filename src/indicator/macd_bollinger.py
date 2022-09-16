@@ -110,17 +110,17 @@ class MACDBollinger(BaseIndicator):
 
         # more signals
         dea_positive_signal = merged_candles_df["dea"].apply(
-            lambda x: 0 if x > 0 else 10000
+            lambda x: 0 if x > 0 else float("inf")
         )
 
         dif_negative_signal = merged_candles_df["dif"].apply(
-            lambda x: 0 if x < 0 else -10000
+            lambda x: 0 if x < 0 else -float("inf")
         )
         dea_negative_signal = merged_candles_df["dea"].apply(
-            lambda x: 0 if x > 0 else -10000
+            lambda x: 0 if x > 0 else -float("inf")
         )
         macd_negative_signal = merged_candles_df["macd"].apply(
-            lambda x: 0 if x > 0 else -10000
+            lambda x: 0 if x > 0 else -float("inf")
         )
 
         rolling = merged_candles_df["close"].rolling(params.boll_length)
@@ -256,4 +256,4 @@ class MACDBollingerBacktest(MACDBollinger):
         from_date_str = from_datatime.strftime("%Y%m%d")
         to_datatime = datetime.fromtimestamp(self.config.end_timestamp)
         to_data_str = to_datatime.strftime("%Y%m%d")
-        return f"local/backtest/macd_boll_{self.hedge_pair.coin}_{from_date_str}_{to_data_str}"
+        return f"local/backtest/macd_boll_{self.hedge_pair.future}_{from_date_str}_{to_data_str}"
