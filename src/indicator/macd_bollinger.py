@@ -162,16 +162,16 @@ class MACDBollinger(BaseIndicator):
         )
 
         # add lower bound factor
-        lower_threshold_dt = lower_threshold_dt * params.lower_bound_factor
+        lower_threshold_df = lower_threshold_df * params.lower_bound_factor
         if params.dea_positive_filter:
-            upper_threshold_df = lower_threshold_df + dea_positive_signal
+            upper_threshold_df = upper_threshold_df + dea_positive_signal
 
         if params.negtive_filter_type == NegtiveSignalType.DIF.value:
-            lower_threshold_dt = lower_threshold_dt + dif_negative_signal
+            lower_threshold_df = lower_threshold_df + dif_negative_signal
         elif params.negtive_filter_type == NegtiveSignalType.DEA.value:
-            lower_threshold_dt = lower_threshold_dt + dea_negative_signal
+            lower_threshold_df = lower_threshold_df + dea_negative_signal
         elif params.negtive_filter_type == NegtiveSignalType.MACD.value:
-            lower_threshold_dt = lower_threshold_dt + macd_negative_signal
+            lower_threshold_df = lower_threshold_df + macd_negative_signal
 
         if as_df:
             return (upper_threshold_df, lower_threshold_df)
@@ -182,7 +182,7 @@ class MACDBollinger(BaseIndicator):
         client = FtxExchange("", "")
         resolution = self._kline_resolution
         end_ts = (time.time() // resolution.value - 1) * resolution.value
-        start_ts = end_ts - self.params.macd_slow_length * resolution.value
+        start_ts = end_ts - 2 * self.params.macd_slow_length * resolution.value
         spot_candles = await client.get_candles(
             self.hedge_pair.spot, resolution, start_ts, end_ts
         )
@@ -256,4 +256,4 @@ class MACDBollingerBacktest(MACDBollinger):
         from_date_str = from_datatime.strftime("%Y%m%d")
         to_datatime = datetime.fromtimestamp(self.config.end_timestamp)
         to_data_str = to_datatime.strftime("%Y%m%d")
-        return f"local/backtest/macd_boll_{self.hedge_pair.future}_{from_date_str}_{to_data_str}"
+        return f"local/backtest/macd_boll_{self.hedge_pair.coin}_{from_date_str}_{to_data_str}"

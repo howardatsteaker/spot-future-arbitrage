@@ -118,7 +118,7 @@ class MACD(BaseIndicator):
         client = FtxExchange("", "")
         resolution = self._kline_resolution
         end_ts = (time.time() // resolution.value - 1) * resolution.value
-        start_ts = end_ts - self.params.slow_length * resolution.value
+        start_ts = end_ts - 2 * self.params.slow_length * resolution.value
         spot_candles = await client.get_candles(
             self.hedge_pair.spot, resolution, start_ts, end_ts
         )
@@ -186,6 +186,4 @@ class MACDBacktest(MACD):
         from_date_str = from_datatime.strftime("%Y%m%d")
         to_datatime = datetime.fromtimestamp(self.config.end_timestamp)
         to_data_str = to_datatime.strftime("%Y%m%d")
-        return (
-            f"local/backtest/macd_{self.hedge_pair.future}_{from_date_str}_{to_data_str}"
-        )
+        return f"local/backtest/macd_{self.hedge_pair.future}_{from_date_str}_{to_data_str}"
