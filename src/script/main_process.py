@@ -831,6 +831,7 @@ class MainProcess:
                     "Unexpected error while request funding account USD balance",
                     exc_info=True,
                     slack=self.config.slack_config.enable,
+                    use_async=False,
                 )
                 return
             deposit_amount: Decimal = (position - target_leverage * account_value) / (
@@ -847,6 +848,7 @@ class MainProcess:
                         f"Unexpected error while apply funding service deposit: {error}",
                         exc_info=True,
                         slack=self.config.slack_config.enable,
+                        use_async=False,
                     )
                 else:
                     time.sleep(1)
@@ -856,6 +858,7 @@ class MainProcess:
                         self.logger.info(
                             f"Funding service deposit ${deposit_amount} Completed",
                             slack=self.config.slack_config.enable,
+                            use_async=False,
                         )
                     elif WORKER_STATUS_PROC == self._fs_client.get_worker_status(
                         resp["worker_id"]
@@ -863,6 +866,7 @@ class MainProcess:
                         self.logger.warning(
                             "Funding service deposit is working in progress",
                             slack=self.config.slack_config.enable,
+                            use_async=False,
                         )
         elif current_leverage < self.config.funding_service_config.leverage_lower_bound:
             available_usd_for_withdraw: Decimal = max(
@@ -884,6 +888,7 @@ class MainProcess:
                         f"Funding service failed to withdraw ${withdraw_amount}: {error}",
                         exc_info=True,
                         slack=self.config.slack_config.enable,
+                        use_async=False,
                     )
                 else:
                     time.sleep(1)
@@ -893,6 +898,7 @@ class MainProcess:
                         self.logger.info(
                             f"Funding service withdraw ${withdraw_amount} completed",
                             slack=self.config.slack_config.enable,
+                            use_async=False,
                         )
                     elif WORKER_STATUS_PROC == self._fs_client.get_worker_status(
                         resp["worker_id"]
@@ -900,6 +906,7 @@ class MainProcess:
                         self.logger.warning(
                             "Funding service withdraw is working in progress",
                             slack=self.config.slack_config.enable,
+                            use_async=False,
                         )
 
     async def _apply_funding_service_loop(self):

@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Mapping
 
 import aiohttp
+import requests
 
 
 @dataclass
@@ -35,69 +36,101 @@ class SlackWrappedLogger(logging.LoggerAdapter):
 
     def debug(self, msg, *args, **kwargs):
         slack: bool = kwargs.pop("slack", False)
+        use_async: bool = kwargs.pop("use_async", True)
         msg, kwargs = self.process(msg, kwargs)
         self.logger.debug(msg, *args, stacklevel=2, **kwargs)
 
         if slack and self.isEnabledFor(logging.DEBUG):
             auth_token = self.extra["auth_token"]
             channel = self.extra["info_channel"]
-            asyncio.create_task(
+            if use_async:
+                asyncio.create_task(
+                    self.a_slack_send_message(
+                        auth_token,
+                        channel,
+                        self.latest_message_store_handler.latest_message,
+                    )
+                )
+            else:
                 self.slack_send_message(
                     auth_token,
                     channel,
                     self.latest_message_store_handler.latest_message,
                 )
-            )
 
     def info(self, msg, *args, **kwargs):
         slack: bool = kwargs.pop("slack", False)
+        use_async: bool = kwargs.pop("use_async", True)
         msg, kwargs = self.process(msg, kwargs)
         self.logger.info(msg, *args, stacklevel=2, **kwargs)
 
         if slack and self.isEnabledFor(logging.INFO):
             auth_token = self.extra["auth_token"]
             channel = self.extra["info_channel"]
-            asyncio.create_task(
+            if use_async:
+                asyncio.create_task(
+                    self.a_slack_send_message(
+                        auth_token,
+                        channel,
+                        self.latest_message_store_handler.latest_message,
+                    )
+                )
+            else:
                 self.slack_send_message(
                     auth_token,
                     channel,
                     self.latest_message_store_handler.latest_message,
                 )
-            )
 
     def warning(self, msg, *args, **kwargs):
         slack: bool = kwargs.pop("slack", False)
+        use_async: bool = kwargs.pop("use_async", True)
         msg, kwargs = self.process(msg, kwargs)
         self.logger.warning(msg, *args, stacklevel=2, **kwargs)
 
         if slack and self.isEnabledFor(logging.WARNING):
             auth_token = self.extra["auth_token"]
             channel = self.extra["alert_channel"]
-            asyncio.create_task(
+            if use_async:
+                asyncio.create_task(
+                    self.a_slack_send_message(
+                        auth_token,
+                        channel,
+                        self.latest_message_store_handler.latest_message,
+                    )
+                )
+            else:
                 self.slack_send_message(
                     auth_token,
                     channel,
                     self.latest_message_store_handler.latest_message,
                 )
-            )
 
     def error(self, msg, *args, **kwargs):
         slack: bool = kwargs.pop("slack", False)
+        use_async: bool = kwargs.pop("use_async", True)
         msg, kwargs = self.process(msg, kwargs)
         self.logger.error(msg, *args, stacklevel=2, **kwargs)
 
         if slack and self.isEnabledFor(logging.ERROR):
             auth_token = self.extra["auth_token"]
             channel = self.extra["alert_channel"]
-            asyncio.create_task(
+            if use_async:
+                asyncio.create_task(
+                    self.a_slack_send_message(
+                        auth_token,
+                        channel,
+                        self.latest_message_store_handler.latest_message,
+                    )
+                )
+            else:
                 self.slack_send_message(
                     auth_token,
                     channel,
                     self.latest_message_store_handler.latest_message,
                 )
-            )
 
-    async def slack_send_message(self, auth_token: str, channel: str, text: str):
+    async def a_slack_send_message(self, auth_token: str, channel: str, text: str):
         if not auth_token or not channel:
             return
         headers = {"Authorization": "Bearer " + auth_token}
@@ -111,3 +144,17 @@ class SlackWrappedLogger(logging.LoggerAdapter):
                 if not res_json["ok"]:
                     error_msg = res_json["error"]
                     self.error(f"Slack error message: {error_msg}")
+
+    def slack_send_message(self, auth_token: str, channel: str, text: str):
+        if not auth_token or not channel:
+            return
+        headers = {"Authorization": "Bearer " + auth_token}
+        data = {
+            "channel": channel,
+            "text": text,
+        }
+        res = requests.post(self.URL, data=data, headers=headers)
+        res_json = res.json()
+        if not res_json["ok"]:
+            error_msg = res_json["error"]
+            self.error(f"Slack error message: {error_msg}")
