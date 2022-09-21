@@ -77,11 +77,13 @@ class Keltner(BaseIndicator):
         resolution = self._kline_resolution
         end_ts = time.time() // resolution.value * resolution.value
         start_ts = end_ts - 2 * self.params.length * resolution.value
-        spot_trades, future_trades = await asyncio.gather(
-            client.get_trades(self.hedge_pair.spot, start_ts, end_ts),
-            client.get_trades(self.hedge_pair.future, start_ts, end_ts),
-        )
-        await client.close()
+        try:
+            spot_trades, future_trades = await asyncio.gather(
+                client.get_trades(self.hedge_pair.spot, start_ts, end_ts),
+                client.get_trades(self.hedge_pair.future, start_ts, end_ts),
+            )
+        finally:
+            await client.close()
         merged_df = self.merge_trades_to_candle_df(spot_trades, future_trades)
 
         upper_threshold, lower_threshold = self.compute_thresholds(
