@@ -42,6 +42,7 @@ from src.exchange.ftx.ftx_error import (AuthenticationError, ExchangeError,
 from src.indicator.base_indicator import BaseIndicator
 from src.indicator.bollinger import Bollinger, BollingerParams
 from src.indicator.macd import MACD, MACDParams
+from src.indicator.macd_bollinger import MACDBollinger, MACDBollingerParams
 from src.util.rate_limit import RateLimiter
 from src.util.slack import SlackWrappedLogger
 
@@ -501,6 +502,21 @@ class SubProcess:
                     params["kline_resolution"]
                 ),
                 params=boll_params,
+            )
+        elif self.config.indicator["name"] == "macd_bollinger":
+            params = MACDBollingerParams(
+                macd_std_mult=params["macd_std_mult"],
+                boll_std_mult=params["boll_std_mult"],
+                lower_bound_factor=params["lower_bound_factor"],
+                dea_positive_filter=params["dea_positive_filter"],
+                negtive_filter_type=params["negtive_filter_type"],
+            )
+            return MACDBollinger(
+                self.hedge_pair,
+                kline_resolution=FtxCandleResolution.from_seconds(
+                    params["kline_resolution"]
+                ),
+                params=params,
             )
         else:
             raise NotImplementedError(
