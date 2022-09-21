@@ -3,9 +3,12 @@ from pick import pick
 from src.backtest.backtest_util import resolution_to_dir_name
 from src.exchange.ftx.ftx_data_type import FtxCandleResolution
 from src.indicator.bollinger import BollingerBacktest
+from src.indicator.donchian import DonchianBacktest
+from src.indicator.keltner import KeltnerBacktest
 from src.indicator.macd import MACDBacktest
 from src.indicator.macd_bollinger import MACDBollingerBacktest
 from src.indicator.rsi import RSIBacktest
+from src.indicator.rsi_follow import RSIFollowBacktest
 
 from ..exchange.ftx.ftx_data_type import FtxHedgePair
 from .backtest import run_backtest
@@ -24,6 +27,9 @@ def main():
         MACDBacktest,
         MACDBollingerBacktest,
         RSIBacktest,
+        RSIFollowBacktest,
+        KeltnerBacktest,
+        DonchianBacktest,
     ]
 
     class_option, _ = pick(class_options, class_title, indicator="=>")
