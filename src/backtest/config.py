@@ -38,8 +38,24 @@ future_config_options: list[HedgeConfig] = [
         "start_time": "2022/06/25",
         "end_time": "2022/09/05",
         "expiration_time": "2022/09/30",
-        "expiration_price": Decimal("19000"),  # temp value
+        "expiration_price": Decimal("20200"),  # temp value
         "hedge_pair": FtxHedgePair(coin="BTC", spot="BTC/USD", future="BTC-0930"),
+    },
+    {
+        "name": "BTC 2022 Q2 0930",
+        "start_time": "2022/03/26",
+        "end_time": "2022/06/24",
+        "expiration_time": "2022/09/30",
+        "expiration_price": Decimal("20200"),  # temp value
+        "hedge_pair": FtxHedgePair(coin="BTC", spot="BTC/USD", future="BTC-0930"),
+    },
+    {
+        "name": "BTC 2022 Q3 1230",
+        "start_time": "2022/06/25",
+        "end_time": "2022/09/05",
+        "expiration_time": "2022/09/30",
+        "expiration_price": Decimal("20200"),  # temp value
+        "hedge_pair": FtxHedgePair(coin="BTC", spot="BTC/USD", future="BTC-1230"),
     },
 ]
 
