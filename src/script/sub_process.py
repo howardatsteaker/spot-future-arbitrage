@@ -504,7 +504,8 @@ class SubProcess:
                 params=boll_params,
             )
         elif self.config.indicator["name"] == "macd_bollinger":
-            params = MACDBollingerParams(
+            params = self.config.indicator["params"]
+            macd_boll_params = MACDBollingerParams(
                 macd_std_mult=params["macd_std_mult"],
                 boll_std_mult=params["boll_std_mult"],
                 lower_bound_factor=params["lower_bound_factor"],
@@ -516,7 +517,7 @@ class SubProcess:
                 kline_resolution=FtxCandleResolution.from_seconds(
                     params["kline_resolution"]
                 ),
-                params=params,
+                params=macd_boll_params,
             )
         else:
             raise NotImplementedError(
