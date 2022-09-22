@@ -235,7 +235,7 @@ class SubProcess:
         if self.spot_position_size >= 0 and self.future_position_size <= 0:
             sum_size = self.spot_position_size + self.future_position_size
             # too many spot, or too less future
-            if sum_size > self.combined_trading_rule.min_order_size:
+            if sum_size >= self.combined_trading_rule.min_order_size:
                 rebalance_size = (
                     sum_size
                     // self.combined_trading_rule.min_order_size
@@ -292,7 +292,7 @@ class SubProcess:
                             self.hedge_pair.future, Side.SELL, rebalance_size
                         )
             # too less spot, or too many future
-            elif sum_size < -self.combined_trading_rule.min_order_size:
+            elif sum_size <= -self.combined_trading_rule.min_order_size:
                 rebalance_size = (
                     (-sum_size)
                     // self.combined_trading_rule.min_order_size
