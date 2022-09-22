@@ -8,7 +8,6 @@ from src.indicator.keltner import KeltnerBacktest
 from src.indicator.macd import MACDBacktest
 from src.indicator.macd_bollinger import MACDBollingerBacktest
 from src.indicator.rsi import RSIBacktest
-from src.indicator.rsi_follow import RSIFollowBacktest
 
 from ..exchange.ftx.ftx_data_type import FtxHedgePair
 from .backtest import run_backtest
