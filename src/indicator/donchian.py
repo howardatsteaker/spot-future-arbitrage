@@ -125,7 +125,7 @@ class DonchianBacktest(Donchian):
 
     def generate_params(self) -> list[DonchianParams]:
         params = []
-        for length in np.arange(20, 40, 20):
+        for length in np.arange(10, 50, 5):
             length = int(length)
             params.append(DonchianParams(length=length))
         return params
