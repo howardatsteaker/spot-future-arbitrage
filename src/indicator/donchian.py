@@ -52,7 +52,9 @@ class Donchian(BaseIndicator):
         rolling_low = merged_candles_df["low"].rolling(params.length)
         merged_candles_df["up"] = rolling_high.max()
         merged_candles_df["low"] = rolling_low.min()
-        merged_candles_df["mid"] = (merged_candles_df["up"] + merged_candles_df["low"]) / 2
+        merged_candles_df["mid"] = (
+            merged_candles_df["up"] + merged_candles_df["low"]
+        ) / 2
 
         upper_threshold = merged_candles_df["up"]
         lower_threshold = merged_candles_df["low"]
