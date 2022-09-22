@@ -27,7 +27,6 @@ def main():
         MACDBacktest,
         MACDBollingerBacktest,
         RSIBacktest,
-        RSIFollowBacktest,
         KeltnerBacktest,
         DonchianBacktest,
     ]
