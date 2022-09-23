@@ -48,19 +48,25 @@ class Donchian(BaseIndicator):
     def compute_thresholds(
         merged_candles_df: pd.DataFrame, params: DonchianParams, as_df=False
     ):
-        rolling = merged_candles_df["close"].rolling(params.length)
-        merged_candles_df["ma"] = rolling.mean()
-        merged_candles_df["up"] = rolling.max()
-        merged_candles_df["low"] = rolling.min()
+        rolling_high = merged_candles_df["high"].rolling(params.length)
+        rolling_low = merged_candles_df["low"].rolling(params.length)
+        merged_candles_df["up"] = rolling_high.max()
+        merged_candles_df["low"] = rolling_low.min()
+        merged_candles_df["mid"] = (
+            merged_candles_df["up"] + merged_candles_df["low"]
+        ) / 2
+
+        upper_threshold = merged_candles_df["up"]
+        lower_threshold = merged_candles_df["low"]
 
         if as_df:
             return (
-                merged_candles_df["up"],
-                merged_candles_df["low"],
+                upper_threshold,
+                lower_threshold,
             )
         else:
-            upper_threshold = merged_candles_df["up"].iloc[-1]
-            lower_threshold = merged_candles_df["low"].iloc[-1]
+            upper_threshold.iloc[-1]
+            lower_threshold.iloc[-1]
 
             return upper_threshold, lower_threshold
 

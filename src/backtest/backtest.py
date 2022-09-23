@@ -25,6 +25,8 @@ def run_backtest(backtest_indicator: BaseIndicator):
     future_close = future_klines["close"].rename("f_close")
     merged_klines = pd.concat([spot_close, future_close], axis=1)
     merged_klines["close"] = merged_klines["f_close"] - merged_klines["s_close"]
+    merged_klines["high"] = future_klines["high"] - spot_klines["high"]
+    merged_klines["low"] = future_klines["low"] - spot_klines["low"]
 
     save_path = backtest_indicator.get_save_path()
     save_path_obj = pathlib.Path(save_path)
