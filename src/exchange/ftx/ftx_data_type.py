@@ -360,3 +360,67 @@ class FtxHedgePairSummary:
                 basis = basis // price_tick * price_tick
             text += f", Basis: ${basis}"
         return text
+
+
+@dataclass
+class OpenCloseInfo:
+    """This class is used for log summary"""
+
+    hedge_pair: FtxHedgePair
+    spot_open_size: Decimal = Decimal(0)
+    spot_open_value: Decimal = Decimal(0)
+    spot_close_size: Decimal = Decimal(0)
+    spot_close_value: Decimal = Decimal(0)
+    future_open_size: Decimal = Decimal(0)
+    future_open_value: Decimal = Decimal(0)
+    future_close_size: Decimal = Decimal(0)
+    future_close_value: Decimal = Decimal(0)
+
+    @property
+    def spot_open_price(self) -> Decimal:
+        if self.spot_open_size == 0:
+            return None
+        else:
+            return self.spot_open_value / self.spot_open_size
+
+    @property
+    def spot_close_price(self) -> Decimal:
+        if self.spot_close_size == 0:
+            return None
+        else:
+            return self.spot_close_value / self.spot_close_size
+
+    @property
+    def future_open_price(self) -> Decimal:
+        if self.future_open_size == 0:
+            return None
+        else:
+            return self.future_open_value / self.future_open_size
+
+    @property
+    def future_close_price(self) -> Decimal:
+        if self.future_close_size == 0:
+            return None
+        else:
+            return self.future_close_value / self.future_close_size
+
+    def fill_entry(self, fill: dict):
+        market = fill.get("market")
+        side = fill.get("side")
+        size = Decimal(str(fill.get("size")))
+        price = Decimal(str(fill.get("price")))
+
+        if market == self.hedge_pair.spot:
+            if side == "buy":
+                self.spot_open_size += size
+                self.spot_open_value += size * price
+            else:
+                self.spot_close_size += size
+                self.spot_close_value += size * price
+        elif market == self.hedge_pair.future:
+            if side == "sell":
+                self.future_open_size += size
+                self.future_open_value += size * price
+            else:
+                self.future_close_size += size
+                self.future_close_value += size * price

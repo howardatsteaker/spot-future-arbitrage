@@ -51,7 +51,9 @@ class FtxExchange:
             self._rest_client = aiohttp.ClientSession()
         return self._rest_client
 
-    def _gen_auth_header(self, http_method: str, url: str, body: dict = None) -> dict:
+    def _gen_auth_header(
+        self, http_method: str, url: str, params: dict = None, body: dict = None
+    ) -> dict:
         if http_method == "POST":
             request = Request(http_method, url, json=body)
             prepared = request.prepare()
@@ -60,7 +62,7 @@ class FtxExchange:
             if prepared.body:
                 content_to_sign += prepared.body
         else:
-            request = Request(http_method, url)
+            request = Request(http_method, url, params=params)
             prepared = request.prepare()
             ts = int(time.time() * 1000)
             content_to_sign = f"{ts}{prepared.method}{prepared.path_url}".encode()
@@ -129,17 +131,20 @@ class FtxExchange:
                 break
         return sorted(all_candles, key=lambda x: dateutil.parser.parse(x["startTime"]))
 
-    async def get_fills(self, symbol: str, start_time: float, end_time: float):
+    async def get_fills(self, start_time: float, end_time: float, symbol: str = None):
         client = self._get_rest_client()
         all_fills = []
         id_set = set()
         while True:
-            url = (
-                self.REST_URL
-                + f"/fills?market={symbol}&start_time={start_time}&end_time={end_time}"
-            )
-            headers = self._gen_auth_header("GET", url)
-            async with client.get(url, headers=headers) as res:
+            params = {
+                "start_time": start_time,
+                "end_time": end_time,
+            }
+            if symbol:
+                params["market"] = symbol
+            url = self.REST_URL + "/fills"
+            headers = self._gen_auth_header("GET", url, params=params)
+            async with client.get(url, params=params, headers=headers) as res:
                 json_res = await res.json()
             if json_res["success"]:
                 fills = json_res["result"]

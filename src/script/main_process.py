@@ -31,8 +31,8 @@ from src.exchange.ftx.ftx_data_type import (Ftx_EWMA_InterestRate,
                                             FtxLeverageMessage,
                                             FtxOrderMessage, FtxOrderStatus,
                                             FtxOrderType, FtxTradingRule,
-                                            FtxTradingRuleMessage, Side,
-                                            TradeType)
+                                            FtxTradingRuleMessage,
+                                            OpenCloseInfo, Side, TradeType)
 from src.script.sub_process import run_sub_process
 from src.util.fund_manager import FundManager
 from src.util.rate_limit import RateLimiter
@@ -785,6 +785,93 @@ class MainProcess:
                     text += f">USD ${usd_size:,.0f}\n"
                     for summary in sorted(summarys.values(), reverse=True):
                         text += f">{summary}\n"
+
+                    # get latest log summary interval fills
+                    now = time.time()
+                    start_ts = (
+                        now // self.LOG_SUMMARY_INTERVAL * self.LOG_SUMMARY_INTERVAL
+                    )
+                    fills = await self.exchange.get_fills(start_ts, now)
+
+                    info_map: Dict[str, OpenCloseInfo] = {}
+                    for fill in fills:
+                        market = fill["market"]
+                        if FtxHedgePair.is_spot(market):
+                            spot = market
+                            coin = FtxHedgePair.spot_to_coin(spot)
+                            future = FtxHedgePair.spot_to_future(
+                                spot, self.config.season
+                            )
+                        elif FtxHedgePair.is_future(market, self.config.season):
+                            future = market
+                            coin = FtxHedgePair.future_to_coin(future)
+                            spot = FtxHedgePair.future_to_spot(future)
+                        if info_map.get(coin) is None:
+                            info_map[coin] = OpenCloseInfo(
+                                hedge_pair=FtxHedgePair(coin, spot, future),
+                            )
+                        info = info_map[coin]
+                        info.fill_entry(fill)
+
+                    if len(info_map) > 0:
+                        text += "Open and close info during last hour:\n"
+                        for info in info_map.values():
+                            future_trading_rule = self.trading_rules.get(
+                                info.hedge_pair.future
+                            )
+                            spot_trading_rule = self.trading_rules.get(
+                                info.hedge_pair.spot
+                            )
+                            text += f"{info.hedge_pair.future}\n"
+                            if info.future_open_size > 0 or info.spot_open_size > 0:
+                                if future_trading_rule and info.future_open_price:
+                                    future_open_price = (
+                                        info.future_open_price
+                                        // future_trading_rule.price_tick
+                                        * future_trading_rule.price_tick
+                                    )
+                                else:
+                                    future_open_price = info.future_open_price
+                                if spot_trading_rule and info.spot_open_price:
+                                    spot_open_price = (
+                                        info.spot_open_price
+                                        // spot_trading_rule.price_tick
+                                        * spot_trading_rule.price_tick
+                                    )
+                                else:
+                                    spot_open_price = info.spot_open_price
+                                text += f">Open future: [{future_open_price}, {info.future_open_size}], "
+                                text += (
+                                    f"spot: [{spot_open_price}, {info.spot_open_size}]"
+                                )
+                                if future_open_price and spot_open_price:
+                                    basis = future_open_price - spot_open_price
+                                    text += f", basis: {basis}"
+                                text += "\n"
+                            if info.future_close_size > 0 or info.spot_close_size > 0:
+                                if future_trading_rule and info.future_close_price:
+                                    future_close_price = (
+                                        info.future_close_price
+                                        // future_trading_rule.price_tick
+                                        * future_trading_rule.price_tick
+                                    )
+                                else:
+                                    future_close_price = info.future_close_price
+                                if spot_trading_rule and info.spot_close_price:
+                                    spot_close_price = (
+                                        info.spot_close_price
+                                        // spot_trading_rule.price_tick
+                                        * spot_trading_rule.price_tick
+                                    )
+                                else:
+                                    spot_close_price = info.spot_close_price
+                                text += f">Close future: [{future_close_price}, {info.future_close_size}], "
+                                text += f"spot: [{spot_close_price}, {info.spot_close_size}]\n"
+                                if future_close_price and spot_close_price:
+                                    basis = future_close_price - spot_close_price
+                                    text += f", basis: {basis}"
+                                text += "\n"
+
                     self.logger.info(text, slack=self.config.slack_config.enable)
 
                     # wait next round
