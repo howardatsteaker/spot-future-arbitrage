@@ -788,10 +788,11 @@ class MainProcess:
 
                     # get latest log summary interval fills
                     now = time.time()
-                    start_ts = (
+                    end_ts = (
                         now // self.LOG_SUMMARY_INTERVAL * self.LOG_SUMMARY_INTERVAL
                     )
-                    fills = await self.exchange.get_fills(start_ts, now)
+                    start_ts = end_ts - self.LOG_SUMMARY_INTERVAL
+                    fills = await self.exchange.get_fills(start_ts, end_ts)
 
                     info_map: Dict[str, OpenCloseInfo] = {}
                     for fill in fills:
@@ -866,7 +867,7 @@ class MainProcess:
                                 else:
                                     spot_close_price = info.spot_close_price
                                 text += f">Close future: [{future_close_price}, {info.future_close_size}], "
-                                text += f"spot: [{spot_close_price}, {info.spot_close_size}]\n"
+                                text += f"spot: [{spot_close_price}, {info.spot_close_size}]"
                                 if future_close_price and spot_close_price:
                                     basis = future_close_price - spot_close_price
                                     text += f", basis: {basis}"
