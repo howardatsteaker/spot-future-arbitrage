@@ -45,7 +45,7 @@ class MainProcess:
     FEE_RATE_POLLING_INTERVAL = 300
     COLLATERAL_WEIGHT_POLLING_INTERVAL = 300
     ACCOUNT_INFO_POLLING_INTERVAL = 3600
-    FUND_MANAGER_POLLING_INTERVAL = 3
+    FUND_MANAGER_POLLING_INTERVAL = 5
     RELEASE_DEAD_SUB_PROCESS_INTERVAL = 300
     LOG_SUMMARY_INTERVAL = 3600
     FUNDING_SERVICE_INTERVAL = 600
@@ -274,7 +274,7 @@ class MainProcess:
                     exc_info=True,
                     slack=self.config.slack_config.enable,
                 )
-                await asyncio.sleep(1)
+                await asyncio.sleep(10)
 
     def _update_trading_rule(self, market_infos: dict):
         trading_rules = {}
@@ -488,7 +488,7 @@ class MainProcess:
                     exc_info=True,
                     slack=self.config.slack_config.enable,
                 )
-                await asyncio.sleep(5)
+                await asyncio.sleep(10)
 
     async def _spawn_sub_processes(self):
         while True:
