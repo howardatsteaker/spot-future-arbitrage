@@ -723,6 +723,8 @@ class MainProcess:
                     # loop positions
                     for position in positions:
                         future = position["future"]
+                        if not FtxHedgePair.is_future(future, self.config.season):
+                            continue
                         future_size = to_decimal_or_none(position["netSize"])
                         coin = FtxHedgePair.future_to_coin(future)
                         if summarys.get(coin):
