@@ -210,7 +210,9 @@ class SubProcess:
         self.logger.info(
             f"{self.hedge_pair.future} position size is {self.future_position_size}"
         )
-        await self._check_size_valid()
+        if (self.future_expiry_ts - time.time()
+            > self.config.seconds_before_expiry_to_stop_close_position):
+            await self._check_size_valid()
         self._position_size_update_event.set()
 
     async def _check_size_valid(self):
