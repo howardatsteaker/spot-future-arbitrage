@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import pathlib
+import random
 import sys
 import time
 from dataclasses import dataclass
@@ -1425,7 +1426,7 @@ class SubProcess:
         timezone = get_localzone_name()
         sched = AsyncIOScheduler(timezone=timezone)
         for size in sizes:
-            start_dt = datetime.fromtimestamp(settle_start_ts)
+            start_dt = datetime.fromtimestamp(settle_start_ts + random.uniform(-0.5, 0.5))
             sched.add_job(
                 self._place_market_order_with_retry,
                 "date",
