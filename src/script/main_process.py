@@ -407,6 +407,7 @@ class MainProcess:
                 account = await self.exchange.get_account()
                 self.fee_rate.maker_fee_rate = Decimal(str(account["makerFee"]))
                 self.fee_rate.taker_fee_rate = Decimal(str(account["takerFee"]))
+                self.ewma_interest_rate.set_taker_fee_rate(self.fee_rate.taker_fee_rate)
                 self._fee_rate_ready_event.set()
                 for (conn, _) in self._connections.values():
                     conn.send(FtxFeeRateMessage(self.fee_rate))

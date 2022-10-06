@@ -211,8 +211,10 @@ class SubProcess:
         self.logger.info(
             f"{self.hedge_pair.future} position size is {self.future_position_size}"
         )
-        if (self.future_expiry_ts - time.time()
-            > self.config.seconds_before_expiry_to_stop_close_position):
+        if (
+            self.future_expiry_ts - time.time()
+            > self.config.seconds_before_expiry_to_stop_close_position
+        ):
             await self._check_size_valid()
         self._position_size_update_event.set()
 
@@ -1426,7 +1428,9 @@ class SubProcess:
         timezone = get_localzone_name()
         sched = AsyncIOScheduler(timezone=timezone)
         for size in sizes:
-            start_dt = datetime.fromtimestamp(settle_start_ts + random.uniform(-0.5, 0.5))
+            start_dt = datetime.fromtimestamp(
+                settle_start_ts + random.uniform(-0.5, 0.5)
+            )
             sched.add_job(
                 self._place_market_order_with_retry,
                 "date",
