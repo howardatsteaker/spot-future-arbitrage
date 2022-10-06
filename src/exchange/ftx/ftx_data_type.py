@@ -67,7 +67,7 @@ class FtxTradingRule:
 @dataclass
 class Ftx_EWMA_InterestRate:
     lookback_days: int
-    taker_fee_rate: Decimal("0.0007")
+    taker_fee_rate: Decimal = Decimal("0.0007")
     lambda_: Decimal = Decimal("0.02")
     last_ewma: Decimal = None
     last_timestamp: float = None
