@@ -42,6 +42,7 @@ strategy:
   open_fee_coverage_multiplier: 2.5  # to open new position, the basis should cover at least 2 times of the trading fee.
   max_open_budget: 500  # the maximum amount to open new positoin per iteration
   cooldown_open_budget: 20  # open budget during cooldown period
+  min_leverage_to_use_cooldown_budget: 2.0  # if current leverage is above this value, cooldown_open_budget with be used.
 
 # the 'whitelist' key can be deleted, default includes all markets 
 whitelist:

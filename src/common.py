@@ -56,6 +56,7 @@ class Config:
         open_fee_coverage_multiplier: Decimal,
         max_open_budget: Decimal,
         cooldown_open_budget: Decimal,
+        min_leverage_to_use_cooldown_budget: Decimal,
         whitelist: List[str],
         blacklist: List[str],
         slack_config: SlackConfig,
@@ -76,6 +77,7 @@ class Config:
         self.open_order_size_multiplier = open_order_size_multiplier
         self.max_open_budget = max_open_budget
         self.cooldown_open_budget = cooldown_open_budget
+        self.min_leverage_to_use_cooldown_budget = min_leverage_to_use_cooldown_budget
         self.close_order_size_multiplier = close_order_size_multiplier
         self.max_leverage = max_leverage
         self.leverage_limit = leverage_limit
@@ -146,6 +148,7 @@ class Config:
             ),
             max_open_budget=Decimal(str(data["strategy"]["max_open_budget"])),
             cooldown_open_budget=Decimal(str(data["strategy"]["cooldown_open_budget"])),
+            min_leverage_to_use_cooldown_budget=Decimal(str(data["strategy"]["strategy"])),
             whitelist=whitelist,
             blacklist=blacklist,
             slack_config=SlackConfig(

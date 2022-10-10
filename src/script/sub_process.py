@@ -747,6 +747,10 @@ class SubProcess:
         )
 
     async def _request_for_budget(self):
+        # if current leverage is low, directly return with max budget
+        if self.leverage_info.current_leverage < self.config.min_leverage_to_use_cooldown_budget:
+            self._budget = self.config.max_open_budget
+            return
         # if has position, request more budget
         if self._has_position():
             max_open_budget = self.config.max_open_budget
