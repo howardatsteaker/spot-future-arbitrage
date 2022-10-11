@@ -140,11 +140,17 @@ def run_backtest(backtest_indicator: BaseIndicator):
 
             # close position
             if state.spot_position > 0:
-                entry_basis = state.future_entry_price - state.spot_entry_price
-                if (
-                    future_side == "BUY"
-                    and basis <= max(0, lower_bound)
-                    and entry_basis > basis
+                close_profit = (
+                    state.future_entry_price
+                    - state.spot_entry_price
+                    - (future_price - spot_price)
+                    - state.future_entry_price * backtest_indicator.config.fee_rate
+                    - state.spot_entry_price * backtest_indicator.config.fee_rate
+                    - future_price * backtest_indicator.config.fee_rate
+                    - spot_price * backtest_indicator.config.fee_rate
+                )
+                if future_side == "BUY" and (
+                    basis <= 0 or (basis < lower_bound and close_profit > 0)
                 ):
                     close_size = min(state.spot_position, max_available_size)
                     spot_market_order = MarketOrder(
