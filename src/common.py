@@ -148,7 +148,9 @@ class Config:
             ),
             max_open_budget=Decimal(str(data["strategy"]["max_open_budget"])),
             cooldown_open_budget=Decimal(str(data["strategy"]["cooldown_open_budget"])),
-            min_leverage_to_use_cooldown_budget=Decimal(str(data["strategy"]["min_leverage_to_use_cooldown_budget"])),
+            min_leverage_to_use_cooldown_budget=Decimal(
+                str(data["strategy"]["min_leverage_to_use_cooldown_budget"])
+            ),
             whitelist=whitelist,
             blacklist=blacklist,
             slack_config=SlackConfig(
