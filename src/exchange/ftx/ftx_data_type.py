@@ -7,10 +7,10 @@ from enum import Enum
 from typing import Union
 
 from src.common import to_decimal_or_none
-from src.exchange.exchange_data_type import HedgePair, TradeType
+from src.exchange.exchange_data_type import CandleResolution, HedgePair, TradeType
 
 
-class FtxCandleResolution(Enum):
+class FtxCandleResolution(CandleResolution):
     FIFTEEN_SECONDS = 15
     ONE_MINUTE = 60
     FIVE_MINUTES = 300

@@ -97,3 +97,12 @@ class HedgePair:
         return (
             self.trade_type is TradeType.CLOSE_ONLY or self.trade_type is TradeType.BOTH
         )
+
+
+class CandleResolution(Enum):
+    @classmethod
+    def from_seconds(cls, seconds: int) -> CandleResolution:
+        raise NotImplementedError
+
+    def to_pandas_resample_rule(self) -> str:
+        raise NotImplementedError
