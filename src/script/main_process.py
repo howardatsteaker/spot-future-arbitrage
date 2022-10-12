@@ -16,6 +16,7 @@ from funding_service_client.fs_client import FSClient
 from funding_service_client.fs_exception import InsufficientBalanceError
 
 from src.common import Config, Exchange, to_decimal_or_none
+from src.exchange.exchange_data_type import TradeType
 from src.exchange.ftx.ftx_client import FtxExchange
 from src.exchange.ftx.ftx_data_type import (Ftx_EWMA_InterestRate,
                                             FtxCollateralWeight,
@@ -32,7 +33,7 @@ from src.exchange.ftx.ftx_data_type import (Ftx_EWMA_InterestRate,
                                             FtxOrderMessage, FtxOrderStatus,
                                             FtxOrderType, FtxTradingRule,
                                             FtxTradingRuleMessage,
-                                            OpenCloseInfo, Side, TradeType)
+                                            OpenCloseInfo, Side)
 from src.script.sub_process import run_sub_process
 from src.util.fund_manager import FundManager
 from src.util.rate_limit import RateLimiter

@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import time
-import uuid
 from dataclasses import dataclass
 from decimal import Decimal
 from enum import Enum
 from typing import Union
 
 from src.common import to_decimal_or_none
+from src.exchange.exchange_data_type import HedgePair, TradeType
 
 
 class FtxCandleResolution(Enum):
@@ -101,51 +101,12 @@ class FtxCollateralWeight:
     weight: Decimal
 
 
-class TradeType(Enum):
-    BOTH = "both"
-    CLOSE_ONLY = "close_only"
-    NEITHER = "neither"
-
-
 @dataclass
-class FtxHedgePair:
+class FtxHedgePair(HedgePair):
     coin: str
     spot: str
     future: str
     trade_type: TradeType = TradeType.BOTH
-
-    @classmethod
-    def from_coin(
-        cls, coin: str, season: str, trade_type: TradeType = TradeType.BOTH
-    ) -> FtxHedgePair:
-        return cls(
-            coin=coin,
-            spot=cls.coin_to_spot(coin),
-            future=cls.coin_to_future(coin, season),
-            trade_type=trade_type,
-        )
-
-    @classmethod
-    def from_spot(
-        cls, spot: str, season: str, trade_type: TradeType = TradeType.BOTH
-    ) -> FtxHedgePair:
-        return cls(
-            coin=cls.spot_to_coin(spot),
-            spot=spot,
-            future=cls.spot_to_future(spot, season),
-            trade_type=trade_type,
-        )
-
-    @classmethod
-    def from_future(
-        cls, future: str, trade_type: TradeType = TradeType.BOTH
-    ) -> FtxHedgePair:
-        return cls(
-            coin=cls.future_to_coin(future),
-            spot=cls.future_to_spot(future),
-            future=future,
-            trade_type=trade_type,
-        )
 
     @staticmethod
     def coin_to_spot(coin: str) -> str:
@@ -178,22 +139,6 @@ class FtxHedgePair:
     @staticmethod
     def is_future(symbol: str, season: str) -> bool:
         return symbol.endswith(f"-{season}")
-
-    @staticmethod
-    def to_dir_name(symbol: str) -> str:
-        symbol = symbol.replace("/", "_")
-        symbol = symbol.replace("-", "_")
-        return symbol
-
-    @property
-    def can_open(self) -> bool:
-        return self.trade_type is TradeType.BOTH
-
-    @property
-    def can_close(self) -> bool:
-        return (
-            self.trade_type is TradeType.CLOSE_ONLY or self.trade_type is TradeType.BOTH
-        )
 
 
 @dataclass

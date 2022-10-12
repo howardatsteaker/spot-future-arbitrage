@@ -19,6 +19,7 @@ from cachetools import TTLCache
 from tzlocal import get_localzone_name
 
 from src.common import Config
+from src.exchange.exchange_data_type import TradeType
 from src.exchange.ftx.ftx_client import FtxExchange
 from src.exchange.ftx.ftx_data_type import (Ftx_EWMA_InterestRate,
                                             FtxCandleResolution,
@@ -36,8 +37,7 @@ from src.exchange.ftx.ftx_data_type import (Ftx_EWMA_InterestRate,
                                             FtxLeverageMessage,
                                             FtxOrderMessage, FtxOrderStatus,
                                             FtxOrderType, FtxTradingRule,
-                                            FtxTradingRuleMessage, Side,
-                                            TradeType)
+                                            FtxTradingRuleMessage, Side)
 from src.exchange.ftx.ftx_error import (AuthenticationError, ExchangeError,
                                         RateLimitExceeded)
 from src.indicator.base_indicator import BaseIndicator
