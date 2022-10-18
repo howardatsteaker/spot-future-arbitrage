@@ -20,8 +20,7 @@ from src.indicator.donchian import DonchianBacktest
 from src.indicator.keltner import KeltnerBacktest
 from src.indicator.macd import MACDBacktest
 from src.indicator.macd_bollinger import MACDBollingerBacktest
-
-# from src.indicator.rsi import RSIBacktest
+from src.indicator.rsi import RSIBacktest
 
 
 def main():
@@ -32,7 +31,7 @@ def main():
         KeltnerBacktest,
         MACDBollingerBacktest,
         MACDBacktest,
-        # RSIBacktest,
+        RSIBacktest,
     ]
 
     class_option, _ = pick(class_options, class_title, indicator="=>")
