@@ -11,7 +11,7 @@ import pandas as pd
 
 from src.backtest.backtest_data_type import BackTestConfig
 from src.exchange.exchange_data_type import (CandleResolution, ExchangeBase,
-                                             HedgePair, Kline)
+                                             HedgePair, Trade)
 from src.indicator.base_indicator import BaseIndicator
 
 
@@ -77,70 +77,72 @@ class Keltner(BaseIndicator):
 
     # for live trade usage
     async def update_indicator_info(self):
-        raise NotImplementedError
+        resolution = self._kline_resolution
+        end_ts = time.time() // resolution.value * resolution.value
+        start_ts = end_ts - 2 * self.params.length * resolution.value
+        try:
+            spot_trades, future_trades = await asyncio.gather(
+                self.spot_client.get_trades(self.hedge_pair.spot, start_ts, end_ts),
+                self.future_client.get_trades(self.hedge_pair.future, start_ts, end_ts),
+            )
+        finally:
+            await self.spot_client.close()
+            await self.future_client.close()
+        merged_df = self.merge_trades_to_candle_df(spot_trades, future_trades)
 
-    #     resolution = self._kline_resolution
-    #     end_ts = time.time() // resolution.value * resolution.value
-    #     start_ts = end_ts - 2 * self.params.length * resolution.value
-    #     try:
-    #         spot_trades, future_trades = await asyncio.gather(
-    #             self.spot_client.get_trades(self.hedge_pair.spot, start_ts, end_ts),
-    #             self.future_client.get_trades(self.hedge_pair.future, start_ts, end_ts),
-    #         )
-    #     finally:
-    #         await self.spot_client.close()
-    #         await self.future_client.close()
-    #     merged_df = self.merge_trades_to_candle_df(spot_trades, future_trades)
+        upper_threshold, lower_threshold = self.compute_thresholds(
+            merged_df, self.params
+        )
 
-    #     upper_threshold, lower_threshold = self.compute_thresholds(
-    #         merged_df, self.params
-    #     )
+        self._upper_threshold = Decimal(str(upper_threshold))
+        self._lower_threshold = Decimal(str(lower_threshold))
+        self._last_kline_start_timestamp = merged_df.index[-1].timestamp()
 
-    #     self._upper_threshold = Decimal(str(upper_threshold))
-    #     self._lower_threshold = Decimal(str(lower_threshold))
-    #     self._last_kline_start_timestamp = merged_df.index[-1].timestamp()
+    def parse_trades_to_df(self, trades: List[Trade]) -> pd.DataFrame:
+        df = pd.DataFrame(trades)
+        df["price"] = df["price"].astype("float64")
+        df["size"] = df["size"].astype("float64")
+        df.index = pd.to_datetime(df["timestamp"], unit="s", utc=True)
+        df.drop(columns=["timestamp"], inplace=True)
+        return df
 
-    # def merge_trades_to_candle_df(self, spot_trades, future_trades) -> pd.DataFrame:
-    #     spot_trades_df = pd.DataFrame.from_records(spot_trades)
-    #     spot_trades_df["time"] = spot_trades_df["time"].apply(dateutil.parser.parse)
-    #     spot_trades_df.set_index("time", inplace=True)
-    #     spot_trades_df.sort_index(inplace=True)
-    #     spot_trades_df.rename(
-    #         columns={
-    #             "id": "s_id",
-    #             "price": "s_price",
-    #             "size": "s_size",
-    #             "side": "s_side",
-    #         },
-    #         inplace=True,
-    #     )
-    #     resample_1s_spot_df = spot_trades_df.resample("1s").last()
+    def merge_trades_to_candle_df(
+        self, spot_trades: List[Trade], future_trades: List[Trade]
+    ) -> pd.DataFrame:
+        spot_trades_df = self.parse_trades_to_df(spot_trades)
+        spot_trades_df.rename(
+            columns={
+                "id": "s_id",
+                "price": "s_price",
+                "size": "s_size",
+                "taker_side": "s_taker_side",
+            },
+            inplace=True,
+        )
+        resample_1s_spot_df = spot_trades_df.resample("1s").last()
 
-    #     future_trades_df = pd.DataFrame.from_records(future_trades)
-    #     future_trades_df["time"] = future_trades_df["time"].apply(dateutil.parser.parse)
-    #     future_trades_df.set_index("time", inplace=True)
-    #     future_trades_df.sort_index(inplace=True)
-    #     future_trades_df.rename(
-    #         columns={
-    #             "id": "f_id",
-    #             "price": "f_price",
-    #             "size": "f_size",
-    #             "side": "f_side",
-    #         },
-    #         inplace=True,
-    #     )
-    #     resample_1s_future_df = future_trades_df.resample("1s").last()
+        future_trades_df = self.parse_trades_to_df(future_trades)
+        future_trades_df.rename(
+            columns={
+                "id": "f_id",
+                "price": "f_price",
+                "size": "f_size",
+                "taker_side": "f_taker_side",
+            },
+            inplace=True,
+        )
+        resample_1s_future_df = future_trades_df.resample("1s").last()
 
-    #     concat_df = pd.concat([resample_1s_spot_df, resample_1s_future_df], axis=1)
-    #     concat_df.dropna(inplace=True)
-    #     concat_df = concat_df[concat_df["s_side"] != concat_df["f_side"]]
-    #     concat_df["basis"] = concat_df["f_price"] - concat_df["s_price"]
-    #     resample: pd.DataFrame = concat_df.resample(
-    #         self._kline_resolution.to_pandas_resample_rule()
-    #     ).agg({"basis": "ohlc"})
-    #     resample = resample.droplevel(0, axis=1)
-    #     resample.fillna(resample["close"].ffill())
-    #     return resample
+        concat_df = pd.concat([resample_1s_spot_df, resample_1s_future_df], axis=1)
+        concat_df.dropna(inplace=True)
+        concat_df = concat_df[concat_df["s_taker_side"] != concat_df["f_taker_side"]]
+        concat_df["basis"] = concat_df["f_price"] - concat_df["s_price"]
+        resample: pd.DataFrame = concat_df.resample(
+            self._kline_resolution.to_pandas_resample_rule()
+        ).agg({"basis": "ohlc"})
+        resample = resample.droplevel(0, axis=1)
+        resample.fillna(resample["close"].ffill())
+        return resample
 
 
 class KeltnerBacktest(Keltner):
