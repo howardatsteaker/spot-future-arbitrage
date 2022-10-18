@@ -9,7 +9,7 @@ import aiohttp
 import dateutil.parser
 from requests import Request
 
-from src.exchange.exchange_data_type import ExchangeBase
+from src.exchange.exchange_data_type import ExchangeBase, Trade
 from src.exchange.ftx.ftx_data_type import (FtxCandleResolution, FtxOrderType,
                                             FtxTicker, Side)
 from src.exchange.ftx.ftx_error import ftx_throw_exception
@@ -472,7 +472,16 @@ class FtxExchange(ExchangeBase):
             error_msg = json_res["error"]
             ftx_throw_exception(error_msg)
 
-    async def get_trades(self, symbol: str, start_time: float, end_time: float):
+    def map_trade(self, ftx_raw_trade: dict) -> Trade:
+        return Trade(
+            id=ftx_raw_trade["id"],
+            price=Decimal(str(ftx_raw_trade["price"])),
+            size=Decimal(str(ftx_raw_trade["size"])),
+            timestamp=dateutil.parser.parse(ftx_raw_trade["time"]).timestamp(),
+            taker_side=Side.BUY if ftx_raw_trade["side"] == "buy" else Side.SELL,
+        )
+
+    async def get_trades(self, symbol: str, start_time: float, end_time: float) -> List[Trade]:
         client = self._get_rest_client()
         all_trades = []
         id_set = set()
@@ -491,19 +500,14 @@ class FtxExchange(ExchangeBase):
                 ftx_throw_exception(error_msg)
             if len(trades) == 0:
                 break
+            trades = list(map(self.map_trade, trades))
             all_trades.extend([trade for trade in trades if trade["id"] not in id_set])
             id_set |= set([trade["id"] for trade in trades])
             end_time = (
-                min(
-                    [
-                        dateutil.parser.parse(trade["time"]).timestamp()
-                        for trade in trades
-                    ]
-                )
-                - 0.000001
+                min([trade["timestamp"] for trade in trades]) - 0.000001
             )
 
-        return sorted(all_trades, key=lambda fill: dateutil.parser.parse(fill["time"]))
+        return sorted(all_trades, key=lambda trade: trade["id"])
 
     async def request_quote(self, from_coin: str, to_coin: str, size: Decimal) -> str:
         """Request for OTC quote

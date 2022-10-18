@@ -4,8 +4,11 @@ from typing import List
 
 import aiohttp
 
+from src.exchange.api_throttler.async_throttler import AsyncThrottler
 from src.exchange.binance.binance_data_type import BinanceCandleResolution
-from src.exchange.exchange_data_type import ExchangeBase, Kline
+from src.exchange.exchange_data_type import ExchangeBase, Kline, Trade, Side
+import src.exchange.binance.binance_spot_constant as SPOT_CONSTANTS
+import src.exchange.binance.binance_usd_margin_futures_constant as FUTURES_CONSTANTS
 
 
 class BinanceSpotExchange(ExchangeBase):
@@ -15,6 +18,7 @@ class BinanceSpotExchange(ExchangeBase):
         self._api_key: str = api_key
         self._api_secret: str = api_secret
         self._rest_client: aiohttp.ClientSession = None
+        self._rate_limiter = AsyncThrottler(SPOT_CONSTANTS.RATE_LIMITS)
 
     @property
     def name(self) -> str:
@@ -38,7 +42,7 @@ class BinanceSpotExchange(ExchangeBase):
         end_time: int,
     ) -> List[Kline]:
         client = self._get_rest_client()
-        url = self.URL + "/api/v3/klines"
+        url = self.URL + SPOT_CONSTANTS.KLINES_URL
         params = {
             "symbol": symbol,
             "interval": resolution.to_binance_rest_api_request_str(),
@@ -46,8 +50,9 @@ class BinanceSpotExchange(ExchangeBase):
             "endTime": end_time * 1000,
             "limit": 1000,
         }
-        async with client.get(url, params=params) as resp:
-            res_json = await resp.json()
+        async with self._rate_limiter.execute_task(SPOT_CONSTANTS.KLINES_URL):
+            async with client.get(url, params=params) as resp:
+                res_json = await resp.json()
 
         ret = []
         for res in res_json:
@@ -64,6 +69,51 @@ class BinanceSpotExchange(ExchangeBase):
 
         return ret
 
+    def map_trade(self, binance_raw_trade: dict) -> Trade:
+        return Trade(
+            id=binance_raw_trade["a"],
+            price=Decimal(binance_raw_trade["p"]),
+            size=Decimal(binance_raw_trade["q"]),
+            timestamp=binance_raw_trade["T"] / 1e3,
+            taker_side=Side.SELL if binance_raw_trade["m"] else Side.BUY,
+        )
+        
+    async def get_trades(
+        self,
+        symbol: str,
+        start_time: float,
+        end_time: float,
+    ) -> List[Trade]:
+        client = self._get_rest_client()
+        url = self.URL + SPOT_CONSTANTS.AGG_TRADES_URL
+        all_trades = []
+        id_set = set()
+        start_time = int(start_time * 1e3)
+        end_time = int(end_time * 1e3)
+        while True:
+            params = {
+                "symbol": symbol,
+                "startTime": start_time,
+                "endTime": end_time,
+                "limit": 1000,
+            }
+            async with self._rate_limiter.execute_task(SPOT_CONSTANTS.AGG_TRADES_URL):
+                async with client.get(url, params=params) as resp:
+                    trades = await resp.json()
+            if len(trades) == 0:
+                break
+            dedupted_trades = [trade for trade in trades if trade["a"] not in id_set]
+            if len(dedupted_trades) == 0:
+                break
+            all_trades.extend(dedupted_trades)
+            id_set |= set([trade["a"] for trade in trades])
+            start_time = (
+                max([trade["T"] for trade in trades])
+            )
+        
+        all_trades = list(map(self.map_trade, all_trades))
+        return sorted(all_trades, key=lambda trade: trade["id"])
+
 
 class BinanceUSDMarginFuturesExchange(ExchangeBase):
     URL = "https://fapi.binance.com"
@@ -72,6 +122,7 @@ class BinanceUSDMarginFuturesExchange(ExchangeBase):
         self._api_key: str = api_key
         self._api_secret: str = api_secret
         self._rest_client: aiohttp.ClientSession = None
+        self._rate_limiter = AsyncThrottler(FUTURES_CONSTANTS.RATE_LIMITS)
 
     @property
     def name(self) -> str:
@@ -95,7 +146,7 @@ class BinanceUSDMarginFuturesExchange(ExchangeBase):
         end_time: int,
     ) -> List[Kline]:
         client = self._get_rest_client()
-        url = self.URL + "/fapi/v1/klines"
+        url = self.URL + FUTURES_CONSTANTS.KLINES_URL
         params = {
             "symbol": symbol,
             "interval": resolution.to_binance_rest_api_request_str(),
@@ -103,8 +154,9 @@ class BinanceUSDMarginFuturesExchange(ExchangeBase):
             "endTime": end_time * 1000,
             "limit": 1500,
         }
-        async with client.get(url, params=params) as resp:
-            res_json = await resp.json()
+        async with self._rate_limiter.execute_task(FUTURES_CONSTANTS.KLINES_URL):
+            async with client.get(url, params=params) as resp:
+                res_json = await resp.json()
 
         ret = []
         for res in res_json:
@@ -120,3 +172,48 @@ class BinanceUSDMarginFuturesExchange(ExchangeBase):
             ret.append(item)
 
         return ret
+
+    def map_trade(self, binance_raw_trade: dict) -> Trade:
+        return Trade(
+            id=binance_raw_trade["a"],
+            price=Decimal(binance_raw_trade["p"]),
+            size=Decimal(binance_raw_trade["q"]),
+            timestamp=binance_raw_trade["T"] / 1e3,
+            taker_side=Side.SELL if binance_raw_trade["m"] else Side.BUY,
+        )
+        
+    async def get_trades(
+        self,
+        symbol: str,
+        start_time: float,
+        end_time: float,
+    ) -> List[Trade]:
+        client = self._get_rest_client()
+        url = self.URL + FUTURES_CONSTANTS.AGG_TRADES_URL
+        all_trades = []
+        id_set = set()
+        start_time = int(start_time * 1e3)
+        end_time = int(end_time * 1e3)
+        while True:
+            params = {
+                "symbol": symbol,
+                "startTime": start_time,
+                "endTime": end_time,
+                "limit": 1000,
+            }
+            async with self._rate_limiter.execute_task(FUTURES_CONSTANTS.AGG_TRADES_URL):
+                async with client.get(url, params=params) as resp:
+                    trades = await resp.json()
+            if len(trades) == 0:
+                break
+            dedupted_trades = [trade for trade in trades if trade["a"] not in id_set]
+            if len(dedupted_trades) == 0:
+                break
+            all_trades.extend(dedupted_trades)
+            id_set |= set([trade["a"] for trade in trades])
+            start_time = (
+                max([trade["T"] for trade in trades])
+            )
+        
+        all_trades = list(map(self.map_trade, all_trades))
+        return sorted(all_trades, key=lambda trade: trade["id"])    

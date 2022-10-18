@@ -111,6 +111,12 @@ class CandleResolution(Enum):
         raise NotImplementedError
 
 
+
+class Side(Enum):
+    BUY = "buy"
+    SELL = "sell"
+
+
 class Kline(TypedDict, total=False):
     start_time: datetime
     open: Decimal
@@ -119,6 +125,14 @@ class Kline(TypedDict, total=False):
     low: Decimal
     base_volume: Decimal
     quote_volume: Decimal
+
+
+class Trade(TypedDict, total=False):
+    id: int
+    price: Decimal
+    size: Decimal
+    timestamp: float  # in seconds
+    taker_side: Side
 
 
 class ExchangeBase:
@@ -138,16 +152,10 @@ class ExchangeBase:
     ) -> List[Kline]:
         raise NotImplementedError
 
-
-class Side(Enum):
-    BUY = "buy"
-    SELL = "sell"
-
-
-@dataclass
-class Trade:
-    id: str
-    price: Decimal
-    size: Decimal
-    timestamp: float
-    taker_side: Side
+    async def get_trades(
+        self,
+        symbol: str,
+        start_time: float,
+        end_time: float,
+    ) -> List[Trade]:
+        raise NotImplementedError
