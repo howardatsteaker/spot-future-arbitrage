@@ -18,9 +18,9 @@ from src.exchange.ftx.ftx_data_type import FtxCandleResolution, FtxHedgePair
 from src.indicator.bollinger import BollingerBacktest
 from src.indicator.donchian import DonchianBacktest
 from src.indicator.keltner import KeltnerBacktest
+from src.indicator.macd import MACDBacktest
 from src.indicator.macd_bollinger import MACDBollingerBacktest
 
-# from src.indicator.macd import MACDBacktest
 # from src.indicator.rsi import RSIBacktest
 
 
@@ -31,7 +31,7 @@ def main():
         DonchianBacktest,
         KeltnerBacktest,
         MACDBollingerBacktest,
-        # MACDBacktest,
+        MACDBacktest,
         # RSIBacktest,
     ]
 
