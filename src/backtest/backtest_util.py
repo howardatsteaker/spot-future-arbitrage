@@ -24,9 +24,13 @@ def logs_to_summary(logs: List[LogState]) -> dict:
         net_deposit.append(log.net_deposit)
     net_deposit_seires = pd.Series(net_deposit, index)
     avg_deposit = net_deposit_seires.resample("1s").last().fillna(method="ffill").mean()
-    roi = profit / avg_deposit
-    days = (logs[-1].timestamp - logs[0].timestamp) / 86400
-    apr = roi / days * 365
+    if avg_deposit > 0:
+        roi = profit / avg_deposit
+        days = (logs[-1].timestamp - logs[0].timestamp) / 86400
+        apr = roi / days * 365
+    else:
+        roi = 0
+        apr = 0
     return {"avg_deposit": avg_deposit, "profit": profit, "roi": roi, "apr": apr}
 
 
