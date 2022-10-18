@@ -16,9 +16,9 @@ from src.exchange.binance.binance_data_type import (BinanceCandleResolution,
 from src.exchange.ftx.ftx_client import FtxExchange
 from src.exchange.ftx.ftx_data_type import FtxCandleResolution, FtxHedgePair
 from src.indicator.bollinger import BollingerBacktest
-
 from src.indicator.donchian import DonchianBacktest
-# from src.indicator.keltner import KeltnerBacktest
+from src.indicator.keltner import KeltnerBacktest
+
 # from src.indicator.macd import MACDBacktest
 # from src.indicator.macd_bollinger import MACDBollingerBacktest
 # from src.indicator.rsi import RSIBacktest
@@ -29,15 +29,15 @@ def main():
     class_options = [
         BollingerBacktest,
         DonchianBacktest,
+        KeltnerBacktest,
         # MACDBacktest,
         # MACDBollingerBacktest,
         # RSIBacktest,
-        # KeltnerBacktest,
     ]
 
     class_option, _ = pick(class_options, class_title, indicator="=>")
     backtest_class = class_option
-    
+
     exchange_title = "Choose Exchange:"
     exchange_options = ["Ftx", "Binance"]
 
