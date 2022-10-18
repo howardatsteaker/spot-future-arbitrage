@@ -1,16 +1,16 @@
+import asyncio
 import time
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 from typing import List
 
-import dateutil.parser
 import numpy as np
 import pandas as pd
 
 from src.backtest.backtest_data_type import BackTestConfig
 from src.exchange.exchange_data_type import (CandleResolution, ExchangeBase,
-                                             HedgePair, Kline)
+                                             HedgePair, Trade)
 from src.indicator.base_indicator import BaseIndicator
 
 
@@ -69,54 +69,76 @@ class Donchian(BaseIndicator):
                 lower_threshold,
             )
         else:
-            upper_threshold.iloc[-1]
-            lower_threshold.iloc[-1]
-
-            return upper_threshold, lower_threshold
+            return upper_threshold.iloc[-1], lower_threshold.iloc[-1]
 
     # for live trade usage
     async def update_indicator_info(self):
-        raise NotImplementedError
-        # resolution = self._kline_resolution
-        # end_ts = (time.time() // resolution.value - 1) * resolution.value
-        # start_ts = end_ts - 2 * self.params.length * resolution.value
-        # try:
-        #     spot_candles = await self.spot_client.get_candles(
-        #         self.hedge_pair.spot, resolution, start_ts, end_ts
-        #     )
-        #     if len(spot_candles) == 0:
-        #         return
-        #     future_candles = await self.future_client.get_candles(
-        #         self.hedge_pair.future, resolution, start_ts, end_ts
-        #     )
-        #     if len(future_candles) == 0:
-        #         return
-        # finally:
-        #     await self.spot_client.close()
-        #     await self.future_client.close()
+        resolution = self._kline_resolution
+        end_ts = time.time() // resolution.value * resolution.value
+        start_ts = end_ts - 2 * self.params.length * resolution.value
+        try:
+            spot_trades, future_trades = await asyncio.gather(
+                self.spot_client.get_trades(self.hedge_pair.spot, start_ts, end_ts),
+                self.future_client.get_trades(self.hedge_pair.future, start_ts, end_ts),
+            )
+        finally:
+            await self.spot_client.close()
+            await self.future_client.close()
+        merged_df = self.merge_trades_to_candle_df(spot_trades, future_trades)
 
-        # spot_df = self.candles_to_df(spot_candles)
-        # future_df = self.candles_to_df(future_candles)
-        # spot_close = spot_df["close"].rename("s_close")
-        # future_close = future_df["close"].rename("f_close")
-        # merged_df = pd.concat([spot_close, future_close], axis=1)
-        # merged_df["close"] = merged_df["f_close"] - merged_df["s_close"]
+        upper_threshold, lower_threshold = self.compute_thresholds(
+            merged_df, self.params
+        )
 
-        # upper_threshold, lower_threshold = self.compute_thresholds(
-        #     merged_df, self.params
-        # )
+        self._upper_threshold = Decimal(str(upper_threshold))
+        self._lower_threshold = Decimal(str(lower_threshold))
+        self._last_kline_start_timestamp = merged_df.index[-1].timestamp()
 
-        # self._upper_threshold = Decimal(str(upper_threshold))
-        # self._lower_threshold = Decimal(str(lower_threshold))
-        # self._last_kline_start_timestamp = spot_df.index[-1].timestamp()
-
-    def candles_to_df(self, candles: List[dict]) -> pd.DataFrame:
-        df = pd.DataFrame.from_records(candles)
-        df["startTime"] = df["startTime"].apply(dateutil.parser.parse)
-        df["close"] = df["close"].astype("float32")
-        df.set_index("startTime", inplace=True)
-        df.sort_index(inplace=True)
+    def parse_trades_to_df(self, trades: List[Trade]) -> pd.DataFrame:
+        df = pd.DataFrame(trades)
+        df["price"] = df["price"].astype("float64")
+        df["size"] = df["size"].astype("float64")
+        df.index = pd.to_datetime(df["timestamp"], unit="s", utc=True)
+        df.drop(columns=["timestamp"], inplace=True)
         return df
+
+    def merge_trades_to_candle_df(
+        self, spot_trades: List[Trade], future_trades: List[Trade]
+    ) -> pd.DataFrame:
+        spot_trades_df = self.parse_trades_to_df(spot_trades)
+        spot_trades_df.rename(
+            columns={
+                "id": "s_id",
+                "price": "s_price",
+                "size": "s_size",
+                "taker_side": "s_taker_side",
+            },
+            inplace=True,
+        )
+        resample_1s_spot_df = spot_trades_df.resample("1s").last()
+
+        future_trades_df = self.parse_trades_to_df(future_trades)
+        future_trades_df.rename(
+            columns={
+                "id": "f_id",
+                "price": "f_price",
+                "size": "f_size",
+                "taker_side": "f_taker_side",
+            },
+            inplace=True,
+        )
+        resample_1s_future_df = future_trades_df.resample("1s").last()
+
+        concat_df = pd.concat([resample_1s_spot_df, resample_1s_future_df], axis=1)
+        concat_df.dropna(inplace=True)
+        concat_df = concat_df[concat_df["s_taker_side"] != concat_df["f_taker_side"]]
+        concat_df["basis"] = concat_df["f_price"] - concat_df["s_price"]
+        resample: pd.DataFrame = concat_df.resample(
+            self._kline_resolution.to_pandas_resample_rule()
+        ).agg({"basis": "ohlc"})
+        resample = resample.droplevel(0, axis=1)
+        resample.fillna(resample["close"].ffill())
+        return resample
 
 
 class DonchianBacktest(Donchian):
