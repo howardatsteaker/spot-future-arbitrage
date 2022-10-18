@@ -850,17 +850,25 @@ class SubProcess:
 
             if ticker_notify_type is TickerNotifyType.SPOT:
                 if spot_ticker.is_delay(self.config.ticker_delay_threshold):
-                    self.logger.debug(f"{spot_ticker.symbol} ticker is delay over {self.config.ticker_delay_threshold} seconds")
+                    self.logger.debug(
+                        f"{spot_ticker.symbol} ticker is delay over {self.config.ticker_delay_threshold} seconds"
+                    )
                     return
                 if future_ticker.is_delay(1):
-                    self.logger.debug(f"{future_ticker.symbol} ticker is delay over 1 second")
+                    self.logger.debug(
+                        f"{future_ticker.symbol} ticker is delay over 1 second"
+                    )
                     return
             else:
                 if future_ticker.is_delay(self.config.ticker_delay_threshold):
-                    self.logger.debug(f"{future_ticker.symbol} ticker is delay over {self.config.ticker_delay_threshold} seconds")
+                    self.logger.debug(
+                        f"{future_ticker.symbol} ticker is delay over {self.config.ticker_delay_threshold} seconds"
+                    )
                     return
                 if spot_ticker.is_delay(1):
-                    self.logger.debug(f"{spot_ticker.symbol} ticker is delay over 1 second")
+                    self.logger.debug(
+                        f"{spot_ticker.symbol} ticker is delay over 1 second"
+                    )
                     return
 
             # get expected profit, cost, fee, etc...

@@ -60,7 +60,8 @@ class MainProcess:
             self.trading_rules: Dict[str, FtxTradingRule] = {}
             self.hedge_pairs: Dict[str, FtxHedgePair] = {}
             self.ewma_interest_rate = Ftx_EWMA_InterestRate(
-                config.interest_rate_lookback_days
+                lookback_days=config.interest_rate_lookback_days,
+                ignore=config.ignore_interest_rate,
             )
             self.fee_rate = FtxFeeRate()
             self.collateral_weights: Dict[str, FtxCollateralWeight] = {}

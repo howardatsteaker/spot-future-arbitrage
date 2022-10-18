@@ -67,6 +67,7 @@ class FtxTradingRule:
 @dataclass
 class Ftx_EWMA_InterestRate:
     lookback_days: int
+    ignore: bool = False
     taker_fee_rate: Decimal = Decimal("0.0007")
     lambda_: Decimal = Decimal("0.02")
     last_ewma: Decimal = None
@@ -74,16 +75,22 @@ class Ftx_EWMA_InterestRate:
 
     @property
     def hourly_rate(self) -> Decimal:
-        return self.last_ewma * (1 + 500 * self.taker_fee_rate)
+        if self.ignore:
+            return Decimal(0)
+        else:
+            return self.last_ewma * (1 + 500 * self.taker_fee_rate)
 
     @property
     def yearly_rate(self) -> Decimal:
-        return (
-            self.last_ewma
-            * Decimal("24")
-            * Decimal("365")
-            * (1 + 500 * self.taker_fee_rate)
-        )
+        if self.ignore:
+            return Decimal(0)
+        else:
+            return (
+                self.last_ewma
+                * Decimal("24")
+                * Decimal("365")
+                * (1 + 500 * self.taker_fee_rate)
+            )
 
     def set_taker_fee_rate(self, taker_fee_rate: Decimal):
         self.taker_fee_rate = taker_fee_rate
