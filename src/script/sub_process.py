@@ -705,8 +705,8 @@ class SubProcess:
                     self.indicator.last_kline_start_timestamp + 2 * resolution + 1
                 )
                 wait_time = max(
-                    0, next_run_ts - now_ts
-                )  # should be none negative wait time
+                    10, next_run_ts - now_ts
+                )  # at least wait 10 seconds
                 await asyncio.sleep(wait_time)
             except asyncio.CancelledError:
                 raise
