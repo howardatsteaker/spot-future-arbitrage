@@ -1,4 +1,5 @@
-from src.exchange.api_throttler.data_types import RateLimit, LinkedLimitWeightPair
+from src.exchange.api_throttler.data_types import (LinkedLimitWeightPair,
+                                                   RateLimit)
 
 # public
 KLINES_URL = "/fapi/v1/klines"
@@ -25,9 +26,16 @@ RATE_LIMITS = [
     RateLimit(limit_id=ORDERS_1MIN, limit=1200, time_interval=ONE_MINUTE),
     RateLimit(limit_id=ORDERS_1SEC, limit=300, time_interval=10),
     # Weight Limits for individual endpoints
-    RateLimit(limit_id=KLINES_URL, limit=MAX_REQUEST, time_interval=ONE_MINUTE,
-              linked_limits=[LinkedLimitWeightPair(REQUEST_WEIGHT, weight=10)]),
-    RateLimit(limit_id=AGG_TRADES_URL, limit=MAX_REQUEST, time_interval=ONE_MINUTE,
-              linked_limits=[LinkedLimitWeightPair(REQUEST_WEIGHT, weight=20)]),
-    
+    RateLimit(
+        limit_id=KLINES_URL,
+        limit=MAX_REQUEST,
+        time_interval=ONE_MINUTE,
+        linked_limits=[LinkedLimitWeightPair(REQUEST_WEIGHT, weight=10)],
+    ),
+    RateLimit(
+        limit_id=AGG_TRADES_URL,
+        limit=MAX_REQUEST,
+        time_interval=ONE_MINUTE,
+        linked_limits=[LinkedLimitWeightPair(REQUEST_WEIGHT, weight=20)],
+    ),
 ]

@@ -481,7 +481,9 @@ class FtxExchange(ExchangeBase):
             taker_side=Side.BUY if ftx_raw_trade["side"] == "buy" else Side.SELL,
         )
 
-    async def get_trades(self, symbol: str, start_time: float, end_time: float) -> List[Trade]:
+    async def get_trades(
+        self, symbol: str, start_time: float, end_time: float
+    ) -> List[Trade]:
         client = self._get_rest_client()
         all_trades = []
         id_set = set()
@@ -503,9 +505,7 @@ class FtxExchange(ExchangeBase):
             trades = list(map(self.map_trade, trades))
             all_trades.extend([trade for trade in trades if trade["id"] not in id_set])
             id_set |= set([trade["id"] for trade in trades])
-            end_time = (
-                min([trade["timestamp"] for trade in trades]) - 0.000001
-            )
+            end_time = min([trade["timestamp"] for trade in trades]) - 0.000001
 
         return sorted(all_trades, key=lambda trade: trade["id"])
 

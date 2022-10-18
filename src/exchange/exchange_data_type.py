@@ -111,7 +111,6 @@ class CandleResolution(Enum):
         raise NotImplementedError
 
 
-
 class Side(Enum):
     BUY = "buy"
     SELL = "sell"

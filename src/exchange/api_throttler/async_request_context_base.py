@@ -1,17 +1,10 @@
 import asyncio
 import logging
 import time
-
 from abc import ABC, abstractmethod
-from typing import (
-    List,
-    Tuple,
-)
+from typing import List, Tuple
 
-from src.exchange.api_throttler.data_types import (
-    RateLimit,
-    TaskLog,
-)
+from src.exchange.api_throttler.data_types import RateLimit, TaskLog
 
 MAX_CAPACITY_REACHED_WARNING_INTERVAL = 30.0
 
@@ -31,14 +24,15 @@ class AsyncRequestContextBase(ABC):
             self._logger = logging.getLogger(__name__)
         return self._logger
 
-    def __init__(self,
-                 task_logs: List[TaskLog],
-                 rate_limit: RateLimit,
-                 related_limits: List[Tuple[RateLimit, int]],
-                 lock: asyncio.Lock,
-                 safety_margin_pct: float,
-                 retry_interval: float = 0.1,
-                 ):
+    def __init__(
+        self,
+        task_logs: List[TaskLog],
+        rate_limit: RateLimit,
+        related_limits: List[Tuple[RateLimit, int]],
+        lock: asyncio.Lock,
+        safety_margin_pct: float,
+        retry_interval: float = 0.1,
+    ):
         """
         Asynchronous context associated with each API request.
         :param task_logs: Shared task logs associated with this API request
@@ -63,7 +57,9 @@ class AsyncRequestContextBase(ABC):
         for task in self._task_logs:
             task_limit: RateLimit = task.rate_limit
             elapsed: float = now - task.timestamp
-            if elapsed > task_limit.time_interval + (task_limit.time_interval * self._safety_margin_pct):
+            if elapsed > task_limit.time_interval + (
+                task_limit.time_interval * self._safety_margin_pct
+            ):
                 self._task_logs.remove(task)
 
     @abstractmethod
@@ -81,9 +77,13 @@ class AsyncRequestContextBase(ABC):
         async with self._lock:
             now = time.time()
             # Each related limit is represented as it own individual TaskLog
-            self._task_logs.append(TaskLog(timestamp=now,
-                                           rate_limit=self._rate_limit,
-                                           weight=self._rate_limit.weight))
+            self._task_logs.append(
+                TaskLog(
+                    timestamp=now,
+                    rate_limit=self._rate_limit,
+                    weight=self._rate_limit.weight,
+                )
+            )
             for limit, weight in self._related_limits:
                 task = TaskLog(timestamp=now, rate_limit=limit, weight=weight)
                 self._task_logs.append(task)

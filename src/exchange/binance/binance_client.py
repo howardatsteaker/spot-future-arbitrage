@@ -4,11 +4,11 @@ from typing import List
 
 import aiohttp
 
-from src.exchange.api_throttler.async_throttler import AsyncThrottler
-from src.exchange.binance.binance_data_type import BinanceCandleResolution
-from src.exchange.exchange_data_type import ExchangeBase, Kline, Trade, Side
 import src.exchange.binance.binance_spot_constant as SPOT_CONSTANTS
 import src.exchange.binance.binance_usd_margin_futures_constant as FUTURES_CONSTANTS
+from src.exchange.api_throttler.async_throttler import AsyncThrottler
+from src.exchange.binance.binance_data_type import BinanceCandleResolution
+from src.exchange.exchange_data_type import ExchangeBase, Kline, Side, Trade
 
 
 class BinanceSpotExchange(ExchangeBase):
@@ -77,7 +77,7 @@ class BinanceSpotExchange(ExchangeBase):
             timestamp=binance_raw_trade["T"] / 1e3,
             taker_side=Side.SELL if binance_raw_trade["m"] else Side.BUY,
         )
-        
+
     async def get_one_hour_trades(
         self,
         symbol: str,
@@ -105,10 +105,8 @@ class BinanceSpotExchange(ExchangeBase):
                 break
             all_trades.extend(dedupted_trades)
             id_set |= set([trade["a"] for trade in trades])
-            start_time_ms = (
-                max([trade["T"] for trade in trades])
-            )
-        
+            start_time_ms = max([trade["T"] for trade in trades])
+
         all_trades = list(map(self.map_trade, all_trades))
         return sorted(all_trades, key=lambda trade: trade["id"])
 
@@ -127,11 +125,13 @@ class BinanceSpotExchange(ExchangeBase):
             one_hour_trades = await self.get_one_hour_trades(
                 symbol=symbol,
                 start_time_ms=start_time_ms,
-                end_time_ms=min(end_time_ms, start_time_ms + one_hour_ms)
+                end_time_ms=min(end_time_ms, start_time_ms + one_hour_ms),
             )
             if len(one_hour_trades) == 0:
                 continue
-            dedupted_trades = [trade for trade in one_hour_trades if trade["id"] not in id_set]
+            dedupted_trades = [
+                trade for trade in one_hour_trades if trade["id"] not in id_set
+            ]
             if len(dedupted_trades) == 0:
                 continue
             all_trades.extend(dedupted_trades)
@@ -207,7 +207,7 @@ class BinanceUSDMarginFuturesExchange(ExchangeBase):
             timestamp=binance_raw_trade["T"] / 1e3,
             taker_side=Side.SELL if binance_raw_trade["m"] else Side.BUY,
         )
-        
+
     async def get_trades(
         self,
         symbol: str,
@@ -227,7 +227,9 @@ class BinanceUSDMarginFuturesExchange(ExchangeBase):
                 "endTime": end_time,
                 "limit": 1000,
             }
-            async with self._rate_limiter.execute_task(FUTURES_CONSTANTS.AGG_TRADES_URL):
+            async with self._rate_limiter.execute_task(
+                FUTURES_CONSTANTS.AGG_TRADES_URL
+            ):
                 async with client.get(url, params=params) as resp:
                     trades = await resp.json()
             if len(trades) == 0:
@@ -237,9 +239,7 @@ class BinanceUSDMarginFuturesExchange(ExchangeBase):
                 break
             all_trades.extend(dedupted_trades)
             id_set |= set([trade["a"] for trade in trades])
-            start_time = (
-                max([trade["T"] for trade in trades])
-            )
-        
+            start_time = max([trade["T"] for trade in trades])
+
         all_trades = list(map(self.map_trade, all_trades))
-        return sorted(all_trades, key=lambda trade: trade["id"])    
+        return sorted(all_trades, key=lambda trade: trade["id"])
