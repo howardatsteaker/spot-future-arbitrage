@@ -17,7 +17,7 @@ from src.exchange.ftx.ftx_client import FtxExchange
 from src.exchange.ftx.ftx_data_type import FtxCandleResolution, FtxHedgePair
 from src.indicator.bollinger import BollingerBacktest
 
-# from src.indicator.donchian import DonchianBacktest
+from src.indicator.donchian import DonchianBacktest
 # from src.indicator.keltner import KeltnerBacktest
 # from src.indicator.macd import MACDBacktest
 # from src.indicator.macd_bollinger import MACDBollingerBacktest
@@ -28,11 +28,11 @@ def main():
     class_title = "Choose Strategy Class:"
     class_options = [
         BollingerBacktest,
+        DonchianBacktest,
         # MACDBacktest,
         # MACDBollingerBacktest,
         # RSIBacktest,
         # KeltnerBacktest,
-        # DonchianBacktest,
     ]
 
     class_option, _ = pick(class_options, class_title, indicator="=>")
