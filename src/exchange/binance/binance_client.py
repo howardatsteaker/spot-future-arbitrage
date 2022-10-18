@@ -78,23 +78,21 @@ class BinanceSpotExchange(ExchangeBase):
             taker_side=Side.SELL if binance_raw_trade["m"] else Side.BUY,
         )
         
-    async def get_trades(
+    async def get_one_hour_trades(
         self,
         symbol: str,
-        start_time: float,
-        end_time: float,
+        start_time_ms: int,
+        end_time_ms: int,
     ) -> List[Trade]:
         client = self._get_rest_client()
         url = self.URL + SPOT_CONSTANTS.AGG_TRADES_URL
         all_trades = []
         id_set = set()
-        start_time = int(start_time * 1e3)
-        end_time = int(end_time * 1e3)
         while True:
             params = {
                 "symbol": symbol,
-                "startTime": start_time,
-                "endTime": end_time,
+                "startTime": start_time_ms,
+                "endTime": end_time_ms,
                 "limit": 1000,
             }
             async with self._rate_limiter.execute_task(SPOT_CONSTANTS.AGG_TRADES_URL):
@@ -107,12 +105,40 @@ class BinanceSpotExchange(ExchangeBase):
                 break
             all_trades.extend(dedupted_trades)
             id_set |= set([trade["a"] for trade in trades])
-            start_time = (
+            start_time_ms = (
                 max([trade["T"] for trade in trades])
             )
         
         all_trades = list(map(self.map_trade, all_trades))
         return sorted(all_trades, key=lambda trade: trade["id"])
+
+    async def get_trades(
+        self,
+        symbol: str,
+        start_time: float,
+        end_time: float,
+    ) -> List[Trade]:
+        all_trades = []
+        id_set = set()
+        start_time_ms = int(start_time * 1e3)
+        end_time_ms = int(end_time * 1e3)
+        one_hour_ms = 3600000
+        while start_time_ms < end_time_ms:
+            one_hour_trades = await self.get_one_hour_trades(
+                symbol=symbol,
+                start_time_ms=start_time_ms,
+                end_time_ms=min(end_time_ms, start_time_ms + one_hour_ms)
+            )
+            if len(one_hour_trades) == 0:
+                continue
+            dedupted_trades = [trade for trade in one_hour_trades if trade["id"] not in id_set]
+            if len(dedupted_trades) == 0:
+                continue
+            all_trades.extend(dedupted_trades)
+            id_set |= set([trade["id"] for trade in one_hour_trades])
+            start_time_ms += one_hour_ms
+
+        return all_trades
 
 
 class BinanceUSDMarginFuturesExchange(ExchangeBase):
