@@ -8,25 +8,16 @@ import numpy as np
 import pandas as pd
 
 from src.backtest import backtest_util
-from src.backtest.ftx_data_types import BaseState, HedgeType, MarketOrder, Side
+from src.backtest.backtest_data_type import BaseState, HedgeType, MarketOrder
+from src.exchange.exchange_data_type import Side
 from src.indicator.base_indicator import BaseIndicator
 
 
 def run_backtest(backtest_indicator: BaseIndicator):
     trades = pd.read_parquet(backtest_util.get_trades_path(backtest_indicator))
-    spot_klines = pd.read_parquet(
-        backtest_util.get_spot_klines_path(backtest_indicator)
+    merged_klines = pd.read_parquet(
+        backtest_util.get_merged_klines_path(backtest_indicator)
     )
-    future_klines = pd.read_parquet(
-        backtest_util.get_future_klines_path(backtest_indicator)
-    )
-
-    spot_close = spot_klines["close"].rename("s_close")
-    future_close = future_klines["close"].rename("f_close")
-    merged_klines = pd.concat([spot_close, future_close], axis=1)
-    merged_klines["close"] = merged_klines["f_close"] - merged_klines["s_close"]
-    merged_klines["high"] = future_klines["high"] - spot_klines["high"]
-    merged_klines["low"] = future_klines["low"] - spot_klines["low"]
 
     save_path = backtest_indicator.get_save_path()
     save_path_obj = pathlib.Path(save_path)
@@ -48,18 +39,13 @@ def run_backtest(backtest_indicator: BaseIndicator):
         state = BaseState()
         logs = []
 
-        trades_iter = trades.itertuples()
         save_dt_truncate = None
         position_logs = []
-        while True:
-            try:
-                trade = next(trades_iter)
-            except StopIteration:
-                break
+        for trade in trades.itertuples():
             dt: pd.Timestamp = trade.Index
             ts: float = dt.timestamp()
             basis = Decimal(str(trade.basis))
-            future_side = trade.f_side
+            future_side = trade.f_taker_side
             spot_price = Decimal(str(trade.s_price))
             spot_size = Decimal(str(trade.s_size))
             future_price = Decimal(str(trade.f_price))
@@ -103,7 +89,7 @@ def run_backtest(backtest_indicator: BaseIndicator):
 
             # open position
             if (
-                future_side == "SELL"
+                future_side == "sell"
                 and basis > upper_bound
                 and ts < backtest_indicator.config.ts_to_stop_open
             ):
@@ -113,7 +99,7 @@ def run_backtest(backtest_indicator: BaseIndicator):
                     price=spot_price,
                     size=max_available_size,
                     create_timestamp=ts,
-                    fee_rate=backtest_indicator.config.fee_rate,
+                    fee_rate=backtest_indicator.config.spot_fee_rate,
                 )
                 future_market_order = MarketOrder(
                     symbol="future",
@@ -121,7 +107,7 @@ def run_backtest(backtest_indicator: BaseIndicator):
                     price=future_price,
                     size=max_available_size,
                     create_timestamp=ts,
-                    fee_rate=backtest_indicator.config.fee_rate,
+                    fee_rate=backtest_indicator.config.future_fee_rate,
                 )
                 fee = future_market_order.fee + spot_market_order.fee
                 expected_return = (
@@ -144,12 +130,13 @@ def run_backtest(backtest_indicator: BaseIndicator):
                     state.future_entry_price
                     - state.spot_entry_price
                     - (future_price - spot_price)
-                    - state.future_entry_price * backtest_indicator.config.fee_rate
-                    - state.spot_entry_price * backtest_indicator.config.fee_rate
-                    - future_price * backtest_indicator.config.fee_rate
-                    - spot_price * backtest_indicator.config.fee_rate
+                    - state.future_entry_price
+                    * backtest_indicator.config.future_fee_rate
+                    - state.spot_entry_price * backtest_indicator.config.spot_fee_rate
+                    - future_price * backtest_indicator.config.future_fee_rate
+                    - spot_price * backtest_indicator.config.spot_fee_rate
                 )
-                if future_side == "BUY" and (
+                if future_side == "buy" and (
                     basis <= 0 or (basis < lower_bound and close_profit > 0)
                 ):
                     close_size = min(state.spot_position, max_available_size)
@@ -159,7 +146,7 @@ def run_backtest(backtest_indicator: BaseIndicator):
                         price=spot_price,
                         size=close_size,
                         create_timestamp=ts,
-                        fee_rate=backtest_indicator.config.fee_rate,
+                        fee_rate=backtest_indicator.config.spot_fee_rate,
                     )
                     future_market_order = MarketOrder(
                         symbol="future",
@@ -167,7 +154,7 @@ def run_backtest(backtest_indicator: BaseIndicator):
                         price=future_price,
                         size=close_size,
                         create_timestamp=ts,
-                        fee_rate=backtest_indicator.config.fee_rate,
+                        fee_rate=backtest_indicator.config.future_fee_rate,
                     )
                     state.close_position(
                         spot_market_order,
@@ -198,7 +185,7 @@ def run_backtest(backtest_indicator: BaseIndicator):
                 price=backtest_indicator.config.expiration_price,
                 size=liquidation_size,
                 create_timestamp=backtest_indicator.config.ts_to_expiry,
-                fee_rate=backtest_indicator.config.fee_rate,
+                fee_rate=backtest_indicator.config.spot_fee_rate,
             )
             future_market_order = MarketOrder(
                 symbol="future",
@@ -206,7 +193,7 @@ def run_backtest(backtest_indicator: BaseIndicator):
                 price=backtest_indicator.config.expiration_price,
                 size=liquidation_size,
                 create_timestamp=backtest_indicator.config.ts_to_expiry,
-                fee_rate=backtest_indicator.config.fee_rate,
+                fee_rate=backtest_indicator.config.future_fee_rate,
             )
             state.close_position(
                 spot_market_order,

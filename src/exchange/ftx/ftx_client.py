@@ -9,12 +9,13 @@ import aiohttp
 import dateutil.parser
 from requests import Request
 
+from src.exchange.exchange_data_type import ExchangeBase
 from src.exchange.ftx.ftx_data_type import (FtxCandleResolution, FtxOrderType,
                                             FtxTicker, Side)
 from src.exchange.ftx.ftx_error import ftx_throw_exception
 
 
-class FtxExchange:
+class FtxExchange(ExchangeBase):
     REST_URL = "https://ftx.com/api"
     WS_URL = "wss://ftx.com/ws"
 
@@ -41,6 +42,10 @@ class FtxExchange:
         self.tickers: Dict[str, FtxTicker] = {}
         self.ticker_notify_conds: Dict[str, asyncio.Condition] = {}
         self.orders = asyncio.Queue()
+
+    @property
+    def name(self) -> str:
+        return "Ftx"
 
     async def close(self):
         if self._rest_client is not None:
@@ -136,15 +141,11 @@ class FtxExchange:
         all_fills = []
         id_set = set()
         while True:
-            params = {
-                "start_time": start_time,
-                "end_time": end_time,
-            }
+            url = self.REST_URL + f"/fills?start_time={start_time}&end_time={end_time}"
             if symbol:
-                params["market"] = symbol
-            url = self.REST_URL + "/fills"
-            headers = self._gen_auth_header("GET", url, params=params)
-            async with client.get(url, params=params, headers=headers) as res:
+                url += f"&market={symbol}"
+            headers = self._gen_auth_header("GET", url)
+            async with client.get(url, headers=headers) as res:
                 json_res = await res.json()
             if json_res["success"]:
                 fills = json_res["result"]

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
+from decimal import Decimal
 from enum import Enum
+from typing import List, TypedDict
 
 
 class TradeType(Enum):
@@ -106,3 +109,45 @@ class CandleResolution(Enum):
 
     def to_pandas_resample_rule(self) -> str:
         raise NotImplementedError
+
+
+class Kline(TypedDict, total=False):
+    start_time: datetime
+    open: Decimal
+    close: Decimal
+    high: Decimal
+    low: Decimal
+    base_volume: Decimal
+    quote_volume: Decimal
+
+
+class ExchangeBase:
+    @property
+    def name(self) -> str:
+        raise NotImplementedError
+
+    async def close(self):
+        raise NotImplementedError
+
+    async def get_candles(
+        self,
+        symbol: str,
+        resolution: CandleResolution,
+        start_time: int,
+        end_time: int,
+    ) -> List[Kline]:
+        raise NotImplementedError
+
+
+class Side(Enum):
+    BUY = "buy"
+    SELL = "sell"
+
+
+@dataclass
+class Trade:
+    id: str
+    price: Decimal
+    size: Decimal
+    timestamp: float
+    taker_side: Side
