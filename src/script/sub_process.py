@@ -19,7 +19,7 @@ from cachetools import TTLCache
 from tzlocal import get_localzone_name
 
 from src.common import Config
-from src.exchange.exchange_data_type import TradeType
+from src.exchange.exchange_data_type import TradeType, Side
 from src.exchange.ftx.ftx_client import FtxExchange
 from src.exchange.ftx.ftx_data_type import (Ftx_EWMA_InterestRate,
                                             FtxCandleResolution,
@@ -37,7 +37,7 @@ from src.exchange.ftx.ftx_data_type import (Ftx_EWMA_InterestRate,
                                             FtxLeverageMessage,
                                             FtxOrderMessage, FtxOrderStatus,
                                             FtxOrderType, FtxTradingRule,
-                                            FtxTradingRuleMessage, Side)
+                                            FtxTradingRuleMessage)
 from src.exchange.ftx.ftx_error import (AuthenticationError, ExchangeError,
                                         RateLimitExceeded)
 from src.indicator.base_indicator import BaseIndicator
@@ -494,6 +494,8 @@ class SubProcess:
                 kline_resolution=FtxCandleResolution.from_seconds(
                     params["kline_resolution"]
                 ),
+                spot_client=self.exchange,
+                future_client=self.exchange,
                 params=macd_params,
             )
         elif self.config.indicator["name"] == "bollinger":
@@ -506,6 +508,8 @@ class SubProcess:
                 kline_resolution=FtxCandleResolution.from_seconds(
                     params["kline_resolution"]
                 ),
+                spot_client=self.exchange,
+                future_client=self.exchange,
                 params=boll_params,
             )
         elif self.config.indicator["name"] == "macd_bollinger":
@@ -522,6 +526,8 @@ class SubProcess:
                 kline_resolution=FtxCandleResolution.from_seconds(
                     params["kline_resolution"]
                 ),
+                spot_client=self.exchange,
+                future_client=self.exchange,
                 params=macd_boll_params,
             )
         else:

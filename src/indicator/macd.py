@@ -154,9 +154,8 @@ class MACD(BaseIndicator):
 
     def candles_to_df(self, candles: List[dict]) -> pd.DataFrame:
         df = pd.DataFrame.from_records(candles)
-        df["startTime"] = df["startTime"].apply(dateutil.parser.parse)
         df["close"] = df["close"].astype("float32")
-        df.set_index("startTime", inplace=True)
+        df.set_index("start_time", inplace=True)
         df.sort_index(inplace=True)
         return df
 

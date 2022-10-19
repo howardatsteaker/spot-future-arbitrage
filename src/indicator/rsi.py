@@ -118,6 +118,7 @@ class RSI(BaseIndicator):
         future_close = future_df["close"].rename("f_close")
         merged_df = pd.concat([spot_close, future_close], axis=1)
         merged_df["close"] = merged_df["f_close"] - merged_df["s_close"]
+        print(merged_df)
 
         upper_threshold, lower_threshold = self.compute_thresholds(
             merged_df, self.params
@@ -129,9 +130,8 @@ class RSI(BaseIndicator):
 
     def candles_to_df(self, candles: List[dict]) -> pd.DataFrame:
         df = pd.DataFrame.from_records(candles)
-        df["startTime"] = df["startTime"].apply(dateutil.parser.parse)
         df["close"] = df["close"].astype("float32")
-        df.set_index("startTime", inplace=True)
+        df.set_index("start_time", inplace=True)
         df.sort_index(inplace=True)
         return df
 

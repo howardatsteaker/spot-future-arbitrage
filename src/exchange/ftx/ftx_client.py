@@ -4,12 +4,13 @@ import logging
 import time
 from decimal import Decimal
 from typing import Dict, List
+import pytz
 
 import aiohttp
 import dateutil.parser
 from requests import Request
 
-from src.exchange.exchange_data_type import ExchangeBase, Trade
+from src.exchange.exchange_data_type import ExchangeBase, Trade, Kline
 from src.exchange.ftx.ftx_data_type import (FtxCandleResolution, FtxOrderType,
                                             FtxTicker, Side)
 from src.exchange.ftx.ftx_error import ftx_throw_exception
@@ -93,13 +94,23 @@ class FtxExchange(ExchangeBase):
                 error_msg = json_res["error"]
                 ftx_throw_exception(error_msg)
 
+    def map_kline(self, raw_kline: dict) -> Kline:
+        return Kline(
+            start_time=dateutil.parser.parse(raw_kline["startTime"]).replace(tzinfo=pytz.utc),
+            open=Decimal(str(raw_kline["open"])),
+            high=Decimal(str(raw_kline["high"])),
+            low=Decimal(str(raw_kline["low"])),
+            close=Decimal(str(raw_kline["close"])),
+            quote_volume=Decimal(str(raw_kline["volume"])),
+        )
+
     async def get_candles(
         self,
         symbol: str,
         resolution: FtxCandleResolution,
         start_time: int,
         end_time: int,
-    ) -> List[dict]:
+    ) -> List[Kline]:
         if start_time is None:
             start_time = 0
         if end_time is None:
@@ -134,7 +145,9 @@ class FtxExchange(ExchangeBase):
             )
             if end_time < start_time:
                 break
-        return sorted(all_candles, key=lambda x: dateutil.parser.parse(x["startTime"]))
+        all_candles = sorted(all_candles, key=lambda x: dateutil.parser.parse(x["startTime"]))
+
+        return list(map(self.map_kline, all_candles))
 
     async def get_fills(self, start_time: float, end_time: float, symbol: str = None):
         client = self._get_rest_client()

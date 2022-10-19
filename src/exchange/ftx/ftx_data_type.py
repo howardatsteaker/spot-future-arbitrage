@@ -8,7 +8,7 @@ from typing import Union
 
 from src.common import to_decimal_or_none
 from src.exchange.exchange_data_type import (CandleResolution, HedgePair,
-                                             TradeType)
+                                             TradeType, Side)
 
 
 class FtxCandleResolution(CandleResolution):
@@ -242,11 +242,6 @@ class FtxTicker:
 
     def is_delay(self, threshold: float) -> bool:
         return time.time() - self.timestamp > threshold
-
-
-class Side(Enum):
-    BUY = "buy"
-    SELL = "sell"
 
 
 class FtxOrderType(Enum):
