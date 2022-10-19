@@ -80,20 +80,17 @@ class Bollinger(BaseIndicator):
         resolution = self._kline_resolution
         end_ts: int = int((time.time() // resolution.value - 1) * resolution.value)
         start_ts: int = int(end_ts - 2 * self.params.length * resolution.value)
-        try:
-            spot_candles = await self.spot_client.get_candles(
-                self.hedge_pair.spot, resolution, start_ts, end_ts
-            )
-            if len(spot_candles) == 0:
-                return
-            future_candles = await self.future_client.get_candles(
-                self.hedge_pair.future, resolution, start_ts, end_ts
-            )
-            if len(future_candles) == 0:
-                return
-        finally:
-            await self.spot_client.close()
-            await self.future_client.close()
+
+        spot_candles = await self.spot_client.get_candles(
+            self.hedge_pair.spot, resolution, start_ts, end_ts
+        )
+        if len(spot_candles) == 0:
+            return
+        future_candles = await self.future_client.get_candles(
+            self.hedge_pair.future, resolution, start_ts, end_ts
+        )
+        if len(future_candles) == 0:
+            return
 
         spot_df = self.candles_to_df(spot_candles)
         future_df = self.candles_to_df(future_candles)
