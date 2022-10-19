@@ -897,13 +897,14 @@ class SubProcess:
             # compute expiry
             seconds_to_expiry = max(0, self.future_expiry_ts - time.time())
             days_to_expiry = Decimal(str(seconds_to_expiry / 86400))
-            hours_to_expiry = days_to_expiry * Decimal("24")
 
             # profit
             # profit = basis - open fee - close fee - spot borrow interest
             # close fee is expected to be close to open fee
             spot_borrow_interest = (
-                spot_price * self.ewma_interest_rate.hourly_rate * hours_to_expiry
+                spot_price
+                * self.ewma_interest_rate.daily_rate
+                * self.config.estimated_borrowing_days
             )
             profit = basis - 2 * fee - spot_borrow_interest
 
@@ -1012,8 +1013,8 @@ class SubProcess:
                         )
                         real_spot_borrow_interest = (
                             spot_order_msg.avg_fill_price
-                            * self.ewma_interest_rate.hourly_rate
-                            * hours_to_expiry
+                            * self.ewma_interest_rate.daily_rate
+                            * self.config.estimated_borrowing_days
                         )
                         real_fee = (
                             future_order_msg.avg_fill_price

@@ -41,6 +41,7 @@ class Config:
         subaccount_name: str,
         ignore_interest_rate: bool,
         interest_rate_lookback_days: int,
+        estimated_borrowing_days: Decimal,
         season: str,
         log: dict,
         indicator: dict,
@@ -70,6 +71,7 @@ class Config:
         self.subaccount_name = subaccount_name
         self.ignore_interest_rate = ignore_interest_rate
         self.interest_rate_lookback_days = interest_rate_lookback_days
+        self.estimated_borrowing_days = estimated_borrowing_days
         self.season = season
         self.log = log
         self.indicator = indicator
@@ -125,6 +127,9 @@ class Config:
             subaccount_name=data["exchange"]["subaccount_name"],
             ignore_interest_rate=data["interest_rate"]["ignore"],
             interest_rate_lookback_days=data["interest_rate"]["lookback_days"],
+            estimated_borrowing_days=Decimal(
+                str(data["interest_rate"]["estimated_borrowing_days"])
+            ),
             season=data["season"],
             log=data["log"],
             indicator=data["indicator"],

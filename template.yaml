@@ -7,6 +7,7 @@ exchange:
 interest_rate:
   ignore: False  # if True, interest_rate will be set to zero
   lookback_days: 60
+  estimated_borrowing_days: 20
 
 season: '0930'
 

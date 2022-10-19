@@ -81,6 +81,13 @@ class Ftx_EWMA_InterestRate:
             return self.last_ewma * (1 + 500 * self.taker_fee_rate)
 
     @property
+    def daily_rate(self) -> Decimal:
+        if self.ignore:
+            return Decimal(0)
+        else:
+            return self.last_ewma * Decimal("24") * (1 + 500 * self.taker_fee_rate)
+
+    @property
     def yearly_rate(self) -> Decimal:
         if self.ignore:
             return Decimal(0)
