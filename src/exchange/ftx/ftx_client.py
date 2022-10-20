@@ -96,7 +96,9 @@ class FtxExchange(ExchangeBase):
 
     def map_kline(self, raw_kline: dict) -> Kline:
         return Kline(
-            start_time=dateutil.parser.parse(raw_kline["startTime"]).replace(tzinfo=pytz.utc),
+            start_time=dateutil.parser.parse(raw_kline["startTime"]).replace(
+                tzinfo=pytz.utc
+            ),
             open=Decimal(str(raw_kline["open"])),
             high=Decimal(str(raw_kline["high"])),
             low=Decimal(str(raw_kline["low"])),
@@ -145,7 +147,9 @@ class FtxExchange(ExchangeBase):
             )
             if end_time < start_time:
                 break
-        all_candles = sorted(all_candles, key=lambda x: dateutil.parser.parse(x["startTime"]))
+        all_candles = sorted(
+            all_candles, key=lambda x: dateutil.parser.parse(x["startTime"])
+        )
 
         return list(map(self.map_kline, all_candles))
 
