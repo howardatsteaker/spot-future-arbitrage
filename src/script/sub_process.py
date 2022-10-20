@@ -19,7 +19,7 @@ from cachetools import TTLCache
 from tzlocal import get_localzone_name
 
 from src.common import Config
-from src.exchange.exchange_data_type import TradeType, Side
+from src.exchange.exchange_data_type import Side, TradeType
 from src.exchange.ftx.ftx_client import FtxExchange
 from src.exchange.ftx.ftx_data_type import (Ftx_EWMA_InterestRate,
                                             FtxCandleResolution,

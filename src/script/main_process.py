@@ -16,7 +16,7 @@ from funding_service_client.fs_client import FSClient
 from funding_service_client.fs_exception import InsufficientBalanceError
 
 from src.common import Config, Exchange, to_decimal_or_none
-from src.exchange.exchange_data_type import TradeType, Side
+from src.exchange.exchange_data_type import Side, TradeType
 from src.exchange.ftx.ftx_client import FtxExchange
 from src.exchange.ftx.ftx_data_type import (Ftx_EWMA_InterestRate,
                                             FtxCollateralWeight,

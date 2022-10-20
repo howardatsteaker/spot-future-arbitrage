@@ -7,8 +7,8 @@ from enum import Enum
 from typing import Union
 
 from src.common import to_decimal_or_none
-from src.exchange.exchange_data_type import (CandleResolution, HedgePair,
-                                             TradeType, Side)
+from src.exchange.exchange_data_type import (CandleResolution, HedgePair, Side,
+                                             TradeType)
 
 
 class FtxCandleResolution(CandleResolution):
