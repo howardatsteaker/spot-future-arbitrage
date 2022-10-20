@@ -178,7 +178,10 @@ class FtxExchange(ExchangeBase):
                 - 0.000001
             )
 
-        return sorted(all_fills, key=lambda fill: dateutil.parser.parse(fill["time"]))
+        return sorted(
+            all_fills,
+            key=lambda fill: (dateutil.parser.parse(fill["time"]), fill["id"]),
+        )
 
     async def get_account(self) -> dict:
         client = self._get_rest_client()
@@ -443,7 +446,10 @@ class FtxExchange(ExchangeBase):
                     )
                     - 0.000001
                 )
-            return sorted(all_fills, key=lambda fill: fill["id"])
+            return sorted(
+                all_fills,
+                key=lambda fill: (dateutil.parser.parse(fill["time"]), fill["id"]),
+            )
 
     async def get_positions(self):
         client = self._get_rest_client()
