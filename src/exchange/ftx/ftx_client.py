@@ -4,13 +4,13 @@ import logging
 import time
 from decimal import Decimal
 from typing import Dict, List
-import pytz
 
 import aiohttp
 import dateutil.parser
+import pytz
 from requests import Request
 
-from src.exchange.exchange_data_type import ExchangeBase, Trade, Kline
+from src.exchange.exchange_data_type import ExchangeBase, Kline, Trade
 from src.exchange.ftx.ftx_data_type import (FtxCandleResolution, FtxOrderType,
                                             FtxTicker, Side)
 from src.exchange.ftx.ftx_error import ftx_throw_exception
@@ -384,7 +384,8 @@ class FtxExchange(ExchangeBase):
             all_fills = []
             id_set = set()
             end_time = time.time()
-            while True:
+            stop_iter = False
+            while not stop_iter:
                 url = (
                     self.REST_URL
                     + f"/fills?market={symbol}&start_time=0&end_time={end_time}"
@@ -400,6 +401,9 @@ class FtxExchange(ExchangeBase):
                 dedup_fills = [f for f in fills if f["id"] not in id_set]
                 if len(dedup_fills) == 0:
                     break
+                dedup_fills = sorted(
+                    dedup_fills, key=lambda fill: fill["id"], reverse=True
+                )
                 for fill in dedup_fills:
                     size = Decimal(str(fill["size"]))
                     if position > 0:
@@ -408,6 +412,7 @@ class FtxExchange(ExchangeBase):
                             all_fills.append(fill)
                             id_set.add(fill["id"])
                             if temp_position <= 0:
+                                stop_iter = True
                                 break
                         else:
                             temp_position += size
@@ -419,6 +424,7 @@ class FtxExchange(ExchangeBase):
                             all_fills.append(fill)
                             id_set.add(fill["id"])
                             if temp_position >= 0:
+                                stop_iter = True
                                 break
                         else:
                             temp_position -= size
@@ -433,9 +439,7 @@ class FtxExchange(ExchangeBase):
                     )
                     - 0.000001
                 )
-            return sorted(
-                all_fills, key=lambda fill: dateutil.parser.parse(fill["time"])
-            )
+            return sorted(all_fills, key=lambda fill: fill["id"])
 
     async def get_positions(self):
         client = self._get_rest_client()
