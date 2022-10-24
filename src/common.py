@@ -161,6 +161,7 @@ class Config:
             min_leverage_to_use_cooldown_budget=Decimal(
                 str(data["strategy"]["min_leverage_to_use_cooldown_budget"])
             ),
+            min_volume_usd_24h=data["strategy"]["min_volume_usd_24h"],
             whitelist=whitelist,
             blacklist=blacklist,
             slack_config=SlackConfig(
