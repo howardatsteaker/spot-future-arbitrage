@@ -4,15 +4,14 @@ import multiprocessing as mp
 import pathlib
 import re
 import time
-from concurrent.futures import ThreadPoolExecutor
 from decimal import Decimal
 from multiprocessing.connection import Connection
 from typing import Dict, List, Tuple
 
 import dateutil.parser
+from funding_service_client.async_fs_client import FSClient
 from funding_service_client.constants import (WORKER_STATUS_FINISH,
                                               WORKER_STATUS_PROC)
-from funding_service_client.fs_client import FSClient
 from funding_service_client.fs_exception import InsufficientBalanceError
 
 from src.common import Config, Exchange, to_decimal_or_none
@@ -896,7 +895,7 @@ class MainProcess:
         except asyncio.CancelledError:
             raise
 
-    def _apply_funding_service(self, available_usd_for_withdraw: Decimal):
+    async def _apply_funding_service(self):
         if not self.config.funding_service_config.enable:
             return
         if self._fs_client is None:
@@ -905,6 +904,11 @@ class MainProcess:
                 exchange="ftx",
                 api_key=self.config.api_key,
             )
+        balances: List[dict] = await self.exchange.get_balances()
+        usd_info: dict = next(b for b in balances if b["coin"] == "USD")
+        usd_borrow: Decimal = Decimal(str(usd_info["spotBorrow"]))
+        account_info = await self.exchange.get_account()
+        self._update_account_info(account_info)
         current_leverage: Decimal = self.leverage_info.current_leverage
         position: Decimal = self.leverage_info.position_value
         account_value: Decimal = self.leverage_info.account_value
@@ -912,7 +916,7 @@ class MainProcess:
         if current_leverage > self.config.funding_service_config.leverage_upper_bound:
             try:
                 funding_account_usd_info: dict = (
-                    self._fs_client.get_funding_account_balance_by_coin("USD")
+                    await self._fs_client.get_funding_account_balance_by_coin("USD")
                 )
                 funding_account_usd_balance: Decimal = Decimal(
                     str(funding_account_usd_info["balance"])
@@ -931,7 +935,7 @@ class MainProcess:
             deposit_amount = min(deposit_amount, funding_account_usd_balance)
             if deposit_amount > self.config.funding_service_config.min_deposit_amount:
                 try:
-                    resp = self._fs_client.request_deposit(
+                    resp = await self._fs_client.request_deposit(
                         "USD", round(float(deposit_amount), 2)
                     )
                 except (InsufficientBalanceError, Exception) as error:
@@ -942,26 +946,45 @@ class MainProcess:
                         use_async=False,
                     )
                 else:
-                    time.sleep(1)
-                    if WORKER_STATUS_FINISH == self._fs_client.get_worker_status(
+                    await asyncio.sleep(1)
+                    status: str = await self._fs_client.get_worker_status(
                         resp["worker_id"]
-                    ):
-                        self.logger.info(
-                            f"Funding service deposit ${deposit_amount} Completed",
-                            slack=self.config.slack_config.enable,
-                            use_async=False,
+                    )
+                    if status == WORKER_STATUS_FINISH:
+                        balances: List[dict] = await self.exchange.get_balances()
+                        usd_info: dict = next(b for b in balances if b["coin"] == "USD")
+                        new_usd_borrow: Decimal = Decimal(str(usd_info["spotBorrow"]))
+                        account_info = await self.exchange.get_account()
+                        self._update_account_info(account_info)
+                        new_current_leverage: Decimal = (
+                            self.leverage_info.current_leverage
                         )
-                    elif WORKER_STATUS_PROC == self._fs_client.get_worker_status(
-                        resp["worker_id"]
-                    ):
+                        new_position: Decimal = self.leverage_info.position_value
+                        new_account_value: Decimal = self.leverage_info.account_value
+                        log_msg: str = (
+                            f"Funding service deposit ${deposit_amount:.2f} completed\n"
+                        )
+                        log_msg += (
+                            f">Account value {account_value} -> {new_account_value}\n"
+                        )
+                        log_msg += f">Position value {position} -> {new_position}\n"
+                        log_msg += (
+                            f">USD spot borrow {usd_borrow} -> {new_usd_borrow}\n"
+                        )
+                        log_msg += f">Leverage {current_leverage}X -> {new_current_leverage}X\n"
+                        self.logger.info(log_msg, slack=self.config.slack_config.enable)
+                    elif status == WORKER_STATUS_PROC:
                         self.logger.warning(
                             "Funding service deposit is working in progress",
                             slack=self.config.slack_config.enable,
                             use_async=False,
                         )
         elif current_leverage < self.config.funding_service_config.leverage_lower_bound:
-            available_usd_for_withdraw: Decimal = max(
-                0,
+            available_usd_for_withdraw: Decimal = Decimal(
+                str(usd_info["availableForWithdrawal"])
+            )
+            available_usd_for_withdraw = max(
+                Decimal(0),
                 available_usd_for_withdraw
                 - self.config.funding_service_config.min_remain,
             )
@@ -971,7 +994,7 @@ class MainProcess:
             withdraw_amount = min(withdraw_amount, available_usd_for_withdraw)
             if withdraw_amount > self.config.funding_service_config.min_withdraw_amount:
                 try:
-                    resp = self._fs_client.request_withdraw(
+                    resp = await self._fs_client.request_withdraw(
                         "USD", round(float(withdraw_amount), 2)
                     )
                 except (InsufficientBalanceError, Exception) as error:
@@ -982,18 +1005,32 @@ class MainProcess:
                         use_async=False,
                     )
                 else:
-                    time.sleep(1)
-                    if WORKER_STATUS_FINISH == self._fs_client.get_worker_status(
+                    await asyncio.sleep(1)
+                    status: str = await self._fs_client.get_worker_status(
                         resp["worker_id"]
-                    ):
-                        self.logger.info(
-                            f"Funding service withdraw ${withdraw_amount} completed",
-                            slack=self.config.slack_config.enable,
-                            use_async=False,
+                    )
+                    if status == WORKER_STATUS_FINISH:
+                        balances: List[dict] = await self.exchange.get_balances()
+                        usd_info: dict = next(b for b in balances if b["coin"] == "USD")
+                        new_usd_borrow: Decimal = Decimal(str(usd_info["spotBorrow"]))
+                        account_info = await self.exchange.get_account()
+                        self._update_account_info(account_info)
+                        new_current_leverage: Decimal = (
+                            self.leverage_info.current_leverage
                         )
-                    elif WORKER_STATUS_PROC == self._fs_client.get_worker_status(
-                        resp["worker_id"]
-                    ):
+                        new_position: Decimal = self.leverage_info.position_value
+                        new_account_value: Decimal = self.leverage_info.account_value
+                        log_msg: str = f"Funding service withdraw ${withdraw_amount:.2f} completed\n"
+                        log_msg += (
+                            f">Account value {account_value} -> {new_account_value}\n"
+                        )
+                        log_msg += f">Position value {position} -> {new_position}\n"
+                        log_msg += (
+                            f">USD spot borrow {usd_borrow} -> {new_usd_borrow}\n"
+                        )
+                        log_msg += f">Leverage {current_leverage}X -> {new_current_leverage}X\n"
+                        self.logger.info(log_msg, slack=self.config.slack_config.enable)
+                    elif status == WORKER_STATUS_PROC:
                         self.logger.warning(
                             "Funding service withdraw is working in progress",
                             slack=self.config.slack_config.enable,
@@ -1005,21 +1042,7 @@ class MainProcess:
         try:
             while True:
                 try:
-                    balances: List[dict] = await self.exchange.get_balances()
-                    usd_info: dict = next(b for b in balances if b["coin"] == "USD")
-                    available_usd_for_withdraw: Decimal = Decimal(
-                        str(usd_info["availableForWithdrawal"])
-                    )
-
-                    # self._apply_funding_service() is not an awaitable function
-                    # so run it in a ThreadPoolExecutor
-                    loop = asyncio.get_event_loop()
-                    with ThreadPoolExecutor() as pool:
-                        await loop.run_in_executor(
-                            pool,
-                            self._apply_funding_service,
-                            available_usd_for_withdraw,
-                        )
+                    await self._apply_funding_service()
                 except Exception:
                     self.logger.error(
                         f"Unexpected error while apply funding service",
