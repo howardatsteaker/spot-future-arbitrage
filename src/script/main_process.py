@@ -685,12 +685,12 @@ class MainProcess:
             while True:
                 try:
                     await self._trading_rules_ready_event.wait()
+                    username_task = self.exchange.get_username()
                     account_task = self.exchange.get_account()
                     balances_task = self.exchange.get_balances()
-                    account, balances = await asyncio.gather(
-                        account_task, balances_task
+                    username, account, balances = await asyncio.gather(
+                        username_task, account_task, balances_task
                     )
-                    username = account["username"]
                     positions = account.pop("positions")
                     account_value = to_decimal_or_none(account["totalAccountValue"])
                     collateral_supply = to_decimal_or_none(account["collateral"])

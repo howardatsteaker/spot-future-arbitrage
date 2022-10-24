@@ -35,6 +35,7 @@ class FtxExchange(ExchangeBase):
         self._api_secret = api_secret
         self._subaccount_name = subaccount_name
         self._rest_client = None
+        self._username = None
 
         # web socket
         self._to_subscribe_order_channel = False
@@ -47,6 +48,12 @@ class FtxExchange(ExchangeBase):
     @property
     def name(self) -> str:
         return "Ftx"
+
+    async def get_username(self) -> str:
+        if self._username is None:
+            account = await self.get_account()
+            self._username = account["username"]
+        return self._username
 
     async def close(self):
         if self._rest_client is not None:
