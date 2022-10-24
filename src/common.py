@@ -59,6 +59,7 @@ class Config:
         max_open_budget: Decimal,
         cooldown_open_budget: Decimal,
         min_leverage_to_use_cooldown_budget: Decimal,
+        min_volume_usd_24h: float,
         whitelist: List[str],
         blacklist: List[str],
         slack_config: SlackConfig,
@@ -82,6 +83,7 @@ class Config:
         self.max_open_budget = max_open_budget
         self.cooldown_open_budget = cooldown_open_budget
         self.min_leverage_to_use_cooldown_budget = min_leverage_to_use_cooldown_budget
+        self.min_volume_usd_24h = min_volume_usd_24h
         self.close_order_size_multiplier = close_order_size_multiplier
         self.max_leverage = max_leverage
         self.leverage_limit = leverage_limit

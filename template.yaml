@@ -45,6 +45,7 @@ strategy:
   max_open_budget: 500  # the maximum amount to open new positoin per iteration
   cooldown_open_budget: 20  # open budget during cooldown period
   min_leverage_to_use_cooldown_budget: 2.0  # if current leverage is above this value, cooldown_open_budget with be used.
+  min_volume_usd_24h: 50  # if the daily trading volume of a hedge pair is below this value, the hedge pair will be added to blacklist.
 
 # the 'whitelist' key can be deleted, default includes all markets 
 whitelist:

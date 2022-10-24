@@ -269,7 +269,7 @@ class MainProcess:
                 )
                 await asyncio.sleep(10)
 
-    def _update_trading_rule(self, market_infos: dict):
+    def _update_trading_rule(self, market_infos: List[dict]):
         trading_rules = {}
         for market in market_infos:
             symbol = market["name"]
@@ -286,10 +286,10 @@ class MainProcess:
             if self.trading_rules.get(future):
                 conn.send(FtxTradingRuleMessage(self.trading_rules[future]))
 
-    async def _update_hedge_pair(self, market_infos: dict):
+    async def _update_hedge_pair(self, market_infos: List[dict]):
         symbol_set = set([info["name"] for info in market_infos if info["enabled"]])
         regex = re.compile(f"[0-9A-Z]+-{self.config.season}")
-        hedge_pairs = {}
+        hedge_pairs: Dict[str, FtxHedgePair] = {}
         for symbol in symbol_set:
             if (
                 regex.match(symbol)
@@ -300,6 +300,25 @@ class MainProcess:
 
         # hedge pairs that have position but not in whitelist should be set to close only mode
         coins_that_have_position = await self._get_coins_that_have_position(symbol_set)
+
+        # hedge pairs that have low daily trading volume (illiquid pair) should be added to blacklist
+        market_volume_map: Dict[str, float] = {
+            info["name"]: info["volumeUsd24h"] for info in market_infos
+        }
+        low_volume_coins: List[str] = []
+        for coin, pair in hedge_pairs.items():
+            if (
+                market_volume_map.get(pair.spot) is not None
+                and market_volume_map[pair.spot] < self.config.min_volume_usd_24h
+            ):
+                low_volume_coins.append(coin)
+                continue
+            if (
+                market_volume_map.get(pair.future) is not None
+                and market_volume_map[pair.future] < self.config.min_volume_usd_24h
+            ):
+                low_volume_coins.append(coin)
+                continue
 
         # handle whitelist
         if len(self.config.whitelist) == 0:
@@ -319,7 +338,7 @@ class MainProcess:
                     )
 
         # handle blacklist
-        for coin in self.config.blacklist:
+        for coin in set(self.config.blacklist).union(low_volume_coins):
             if self.hedge_pairs.get(coin):
                 if coin in coins_that_have_position:
                     self.hedge_pairs[coin].trade_type = TradeType.CLOSE_ONLY
