@@ -7,14 +7,16 @@ from typing import Dict, List
 
 import aiohttp
 import dateutil.parser
+import pytz
 from requests import Request
 
+from src.exchange.exchange_data_type import ExchangeBase, Kline, Trade
 from src.exchange.ftx.ftx_data_type import (FtxCandleResolution, FtxOrderType,
                                             FtxTicker, Side)
 from src.exchange.ftx.ftx_error import ftx_throw_exception
 
 
-class FtxExchange:
+class FtxExchange(ExchangeBase):
     REST_URL = "https://ftx.com/api"
     WS_URL = "wss://ftx.com/ws"
 
@@ -41,6 +43,10 @@ class FtxExchange:
         self.tickers: Dict[str, FtxTicker] = {}
         self.ticker_notify_conds: Dict[str, asyncio.Condition] = {}
         self.orders = asyncio.Queue()
+
+    @property
+    def name(self) -> str:
+        return "Ftx"
 
     async def close(self):
         if self._rest_client is not None:
@@ -88,13 +94,25 @@ class FtxExchange:
                 error_msg = json_res["error"]
                 ftx_throw_exception(error_msg)
 
+    def map_kline(self, raw_kline: dict) -> Kline:
+        return Kline(
+            start_time=dateutil.parser.parse(raw_kline["startTime"]).replace(
+                tzinfo=pytz.utc
+            ),
+            open=Decimal(str(raw_kline["open"])),
+            high=Decimal(str(raw_kline["high"])),
+            low=Decimal(str(raw_kline["low"])),
+            close=Decimal(str(raw_kline["close"])),
+            quote_volume=Decimal(str(raw_kline["volume"])),
+        )
+
     async def get_candles(
         self,
         symbol: str,
         resolution: FtxCandleResolution,
         start_time: int,
         end_time: int,
-    ) -> List[dict]:
+    ) -> List[Kline]:
         if start_time is None:
             start_time = 0
         if end_time is None:
@@ -129,22 +147,22 @@ class FtxExchange:
             )
             if end_time < start_time:
                 break
-        return sorted(all_candles, key=lambda x: dateutil.parser.parse(x["startTime"]))
+        all_candles = sorted(
+            all_candles, key=lambda x: dateutil.parser.parse(x["startTime"])
+        )
+
+        return list(map(self.map_kline, all_candles))
 
     async def get_fills(self, start_time: float, end_time: float, symbol: str = None):
         client = self._get_rest_client()
         all_fills = []
         id_set = set()
         while True:
-            params = {
-                "start_time": start_time,
-                "end_time": end_time,
-            }
+            url = self.REST_URL + f"/fills?start_time={start_time}&end_time={end_time}"
             if symbol:
-                params["market"] = symbol
-            url = self.REST_URL + "/fills"
-            headers = self._gen_auth_header("GET", url, params=params)
-            async with client.get(url, params=params, headers=headers) as res:
+                url += f"&market={symbol}"
+            headers = self._gen_auth_header("GET", url)
+            async with client.get(url, headers=headers) as res:
                 json_res = await res.json()
             if json_res["success"]:
                 fills = json_res["result"]
@@ -160,7 +178,10 @@ class FtxExchange:
                 - 0.000001
             )
 
-        return sorted(all_fills, key=lambda fill: dateutil.parser.parse(fill["time"]))
+        return sorted(
+            all_fills,
+            key=lambda fill: (dateutil.parser.parse(fill["time"]), fill["id"]),
+        )
 
     async def get_account(self) -> dict:
         client = self._get_rest_client()
@@ -370,7 +391,8 @@ class FtxExchange:
             all_fills = []
             id_set = set()
             end_time = time.time()
-            while True:
+            stop_iter = False
+            while not stop_iter:
                 url = (
                     self.REST_URL
                     + f"/fills?market={symbol}&start_time=0&end_time={end_time}"
@@ -386,6 +408,9 @@ class FtxExchange:
                 dedup_fills = [f for f in fills if f["id"] not in id_set]
                 if len(dedup_fills) == 0:
                     break
+                dedup_fills = sorted(
+                    dedup_fills, key=lambda fill: fill["id"], reverse=True
+                )
                 for fill in dedup_fills:
                     size = Decimal(str(fill["size"]))
                     if position > 0:
@@ -394,6 +419,7 @@ class FtxExchange:
                             all_fills.append(fill)
                             id_set.add(fill["id"])
                             if temp_position <= 0:
+                                stop_iter = True
                                 break
                         else:
                             temp_position += size
@@ -405,6 +431,7 @@ class FtxExchange:
                             all_fills.append(fill)
                             id_set.add(fill["id"])
                             if temp_position >= 0:
+                                stop_iter = True
                                 break
                         else:
                             temp_position -= size
@@ -420,7 +447,8 @@ class FtxExchange:
                     - 0.000001
                 )
             return sorted(
-                all_fills, key=lambda fill: dateutil.parser.parse(fill["time"])
+                all_fills,
+                key=lambda fill: (dateutil.parser.parse(fill["time"]), fill["id"]),
             )
 
     async def get_positions(self):
@@ -471,7 +499,18 @@ class FtxExchange:
             error_msg = json_res["error"]
             ftx_throw_exception(error_msg)
 
-    async def get_trades(self, symbol: str, start_time: float, end_time: float):
+    def map_trade(self, ftx_raw_trade: dict) -> Trade:
+        return Trade(
+            id=ftx_raw_trade["id"],
+            price=Decimal(str(ftx_raw_trade["price"])),
+            size=Decimal(str(ftx_raw_trade["size"])),
+            timestamp=dateutil.parser.parse(ftx_raw_trade["time"]).timestamp(),
+            taker_side=Side.BUY if ftx_raw_trade["side"] == "buy" else Side.SELL,
+        )
+
+    async def get_trades(
+        self, symbol: str, start_time: float, end_time: float
+    ) -> List[Trade]:
         client = self._get_rest_client()
         all_trades = []
         id_set = set()
@@ -490,19 +529,12 @@ class FtxExchange:
                 ftx_throw_exception(error_msg)
             if len(trades) == 0:
                 break
+            trades = list(map(self.map_trade, trades))
             all_trades.extend([trade for trade in trades if trade["id"] not in id_set])
             id_set |= set([trade["id"] for trade in trades])
-            end_time = (
-                min(
-                    [
-                        dateutil.parser.parse(trade["time"]).timestamp()
-                        for trade in trades
-                    ]
-                )
-                - 0.000001
-            )
+            end_time = min([trade["timestamp"] for trade in trades]) - 0.000001
 
-        return sorted(all_trades, key=lambda fill: dateutil.parser.parse(fill["time"]))
+        return sorted(all_trades, key=lambda trade: trade["id"])
 
     async def request_quote(self, from_coin: str, to_coin: str, size: Decimal) -> str:
         """Request for OTC quote

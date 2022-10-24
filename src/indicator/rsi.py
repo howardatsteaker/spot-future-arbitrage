@@ -8,9 +8,9 @@ import dateutil.parser
 import numpy as np
 import pandas as pd
 
-from src.backtest.ftx_data_types import BackTestConfig
-from src.exchange.ftx.ftx_client import FtxExchange
-from src.exchange.ftx.ftx_data_type import FtxCandleResolution, FtxHedgePair
+from src.backtest.backtest_data_type import BackTestConfig
+from src.exchange.exchange_data_type import (CandleResolution, ExchangeBase,
+                                             HedgePair, Kline)
 from src.indicator.base_indicator import BaseIndicator
 
 
@@ -36,12 +36,16 @@ class RSI(BaseIndicator):
 
     def __init__(
         self,
-        hedge_pair: FtxHedgePair,
-        kline_resolution: FtxCandleResolution,
+        hedge_pair: HedgePair,
+        kline_resolution: CandleResolution,
+        spot_client: ExchangeBase,
+        future_client: ExchangeBase,
         params: RSIParams = None,
     ):
         super().__init__(kline_resolution)
         self.hedge_pair = hedge_pair
+        self.spot_client: ExchangeBase = spot_client
+        self.future_client: ExchangeBase = future_client
         if not params:
             # default params
             self.params: RSIParams = RSIParams(
@@ -90,23 +94,20 @@ class RSI(BaseIndicator):
 
     # for live trade usage
     async def update_indicator_info(self):
-        client = FtxExchange("", "")
         resolution = self._kline_resolution
         end_ts = (time.time() // resolution.value - 1) * resolution.value
         start_ts = end_ts - 2 * self.params.length * resolution.value
-        try:
-            spot_candles = await client.get_candles(
-                self.hedge_pair.spot, resolution, start_ts, end_ts
-            )
-            if len(spot_candles) == 0:
-                return
-            future_candles = await client.get_candles(
-                self.hedge_pair.future, resolution, start_ts, end_ts
-            )
-            if len(future_candles) == 0:
-                return
-        finally:
-            await client.close()
+
+        spot_candles = await self.spot_client.get_candles(
+            self.hedge_pair.spot, resolution, start_ts, end_ts
+        )
+        if len(spot_candles) == 0:
+            return
+        future_candles = await self.future_client.get_candles(
+            self.hedge_pair.future, resolution, start_ts, end_ts
+        )
+        if len(future_candles) == 0:
+            return
 
         spot_df = self.candles_to_df(spot_candles)
         future_df = self.candles_to_df(future_candles)
@@ -114,6 +115,7 @@ class RSI(BaseIndicator):
         future_close = future_df["close"].rename("f_close")
         merged_df = pd.concat([spot_close, future_close], axis=1)
         merged_df["close"] = merged_df["f_close"] - merged_df["s_close"]
+        print(merged_df)
 
         upper_threshold, lower_threshold = self.compute_thresholds(
             merged_df, self.params
@@ -125,9 +127,8 @@ class RSI(BaseIndicator):
 
     def candles_to_df(self, candles: List[dict]) -> pd.DataFrame:
         df = pd.DataFrame.from_records(candles)
-        df["startTime"] = df["startTime"].apply(dateutil.parser.parse)
         df["close"] = df["close"].astype("float32")
-        df.set_index("startTime", inplace=True)
+        df.set_index("start_time", inplace=True)
         df.sort_index(inplace=True)
         return df
 
@@ -135,11 +136,18 @@ class RSI(BaseIndicator):
 class RSIBacktest(RSI):
     def __init__(
         self,
-        hedge_pair: FtxHedgePair,
-        kline_resolution: FtxCandleResolution,
+        hedge_pair: HedgePair,
+        kline_resolution: CandleResolution,
+        spot_client: ExchangeBase,
+        future_client: ExchangeBase,
         backtest_config: BackTestConfig,
     ):
-        super().__init__(hedge_pair, kline_resolution)
+        super().__init__(
+            hedge_pair=hedge_pair,
+            kline_resolution=kline_resolution,
+            spot_client=spot_client,
+            future_client=future_client,
+        )
         self.config = backtest_config
 
     def generate_params(self) -> list[RSIParams]:
@@ -159,6 +167,4 @@ class RSIBacktest(RSI):
         from_date_str = from_datatime.strftime("%Y%m%d")
         to_datatime = datetime.fromtimestamp(self.config.end_timestamp)
         to_data_str = to_datatime.strftime("%Y%m%d")
-        return (
-            f"local/backtest/rsi_{self.hedge_pair.future}_{from_date_str}_{to_data_str}"
-        )
+        return f"local/backtest/rsi_{self.future_client.name}_{self.hedge_pair.future}_{from_date_str}_{to_data_str}"

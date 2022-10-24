@@ -19,6 +19,7 @@ from cachetools import TTLCache
 from tzlocal import get_localzone_name
 
 from src.common import Config
+from src.exchange.exchange_data_type import Side, TradeType
 from src.exchange.ftx.ftx_client import FtxExchange
 from src.exchange.ftx.ftx_data_type import (Ftx_EWMA_InterestRate,
                                             FtxCandleResolution,
@@ -36,8 +37,7 @@ from src.exchange.ftx.ftx_data_type import (Ftx_EWMA_InterestRate,
                                             FtxLeverageMessage,
                                             FtxOrderMessage, FtxOrderStatus,
                                             FtxOrderType, FtxTradingRule,
-                                            FtxTradingRuleMessage, Side,
-                                            TradeType)
+                                            FtxTradingRuleMessage)
 from src.exchange.ftx.ftx_error import (AuthenticationError, ExchangeError,
                                         RateLimitExceeded)
 from src.indicator.base_indicator import BaseIndicator
@@ -82,6 +82,7 @@ class SubProcess:
         self.spot_trading_rule: FtxTradingRule = None
         self.future_trading_rule: FtxTradingRule = None
         self.combined_trading_rule: CombinedTradingRule = None
+        self._combined_trading_rule_update_event: asyncio.Event = asyncio.Event()
         self.ewma_interest_rate: Ftx_EWMA_InterestRate = None
         self.fee_rate: FtxFeeRate = None
         self.collateral_weight: FtxCollateralWeight = None
@@ -211,6 +212,7 @@ class SubProcess:
         self.logger.info(
             f"{self.hedge_pair.future} position size is {self.future_position_size}"
         )
+        await self._future_expiry_ts_update_event.wait()
         if (
             self.future_expiry_ts - time.time()
             > self.config.seconds_before_expiry_to_stop_close_position
@@ -227,6 +229,7 @@ class SubProcess:
             2. future size > 0
             3. imbalance size between spot and future
         """
+        await self._combined_trading_rule_update_event.wait()
         if self.spot_position_size < 0:
             self.logger.warning(
                 f"{self.hedge_pair.coin} has negative spot size {self.spot_position_size}",
@@ -494,6 +497,8 @@ class SubProcess:
                 kline_resolution=FtxCandleResolution.from_seconds(
                     params["kline_resolution"]
                 ),
+                spot_client=self.exchange,
+                future_client=self.exchange,
                 params=macd_params,
             )
         elif self.config.indicator["name"] == "bollinger":
@@ -506,6 +511,8 @@ class SubProcess:
                 kline_resolution=FtxCandleResolution.from_seconds(
                     params["kline_resolution"]
                 ),
+                spot_client=self.exchange,
+                future_client=self.exchange,
                 params=boll_params,
             )
         elif self.config.indicator["name"] == "macd_bollinger":
@@ -522,6 +529,8 @@ class SubProcess:
                 kline_resolution=FtxCandleResolution.from_seconds(
                     params["kline_resolution"]
                 ),
+                spot_client=self.exchange,
+                future_client=self.exchange,
                 params=macd_boll_params,
             )
         else:
@@ -606,6 +615,7 @@ class SubProcess:
                         == 0
                     ), f"{lcm_min_order_size} is not a multiple of future min order size {self.future_trading_rule.min_order_size}"
                     self.combined_trading_rule = CombinedTradingRule(lcm_min_order_size)
+                    self._combined_trading_rule_update_event.set()
             elif type(msg) is FtxInterestRateMessage:
                 self.ewma_interest_rate = msg.ewma_interest_rate
                 self.logger.debug(

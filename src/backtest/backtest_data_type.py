@@ -1,83 +1,26 @@
-from __future__ import annotations
-
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
-from enum import Enum, auto
+from enum import Enum
 from functools import cached_property
 from typing import List
 
-from dateutil import parser
-
-
-class Side(Enum):
-    BUY = "buy"
-    SELL = "sell"
-
-    @classmethod
-    def ftx_side_map(cls, side: str):
-        if side == "buy":
-            return cls.BUY
-        elif side == "sell":
-            return cls.SELL
+from src.exchange.exchange_data_type import Side
 
 
 @dataclass
-class Trade:
-    id: str
-    price: float
-    size: float
-    side: Side
-    time: datetime
-
-    @classmethod
-    def ftx_map(cls, row: dict) -> Trade:
-        """FTX original map function"""
-        side = Side.ftx_side_map(row["side"])
-        time = parser.parse(row["time"])
-        return Trade(row["id"], row["price"], row["size"], side, time)
-
-    def to_json(self) -> dict:
-        return {
-            "id": self.id,
-            "price": self.price,
-            "size": self.size,
-            "side": self.side.name,
-            "time": self.time.timestamp(),
-        }
-
-    @classmethod
-    def from_json(cls, data: dict) -> Trade:
-        side = Side.BUY if data["side"] == "BUY" else Side.SELL
-        t = datetime.fromtimestamp(data["time"])
-        return Trade(
-            id=data["id"], price=data["price"], size=data["size"], side=side, time=t
-        )
-
-    def __repr__(self) -> str:
-        return f"Trade(id: {self.id}, price: {self.price}, size: {self.size}, side: {self.side.name}, time: {self.time})"
-
-
-@dataclass
-class Kline:
-    high: Decimal
-    low: Decimal
-    open: Decimal
-    close: Decimal
-    volume: Decimal
-    time: datetime
-
-    @classmethod
-    def ftx_map(self, row: dict):
-        """FTX original map function"""
-        return Kline(
-            high=Decimal(str(row["high"])),
-            low=Decimal(str(row["low"])),
-            open=Decimal(str(row["open"])),
-            close=Decimal(str(row["close"])),
-            volume=Decimal(str(row["volume"])),
-            time=parser.parse(row["start_time"]),
-        )
+class BackTestConfig:
+    spot_fee_rate: Decimal
+    future_fee_rate: Decimal
+    collateral_weight: Decimal
+    start_timestamp: int
+    end_timestamp: int
+    ts_to_stop_open: int
+    ts_to_expiry: int
+    expiration_price: Decimal
+    leverage: Decimal
+    save_dir: str
+    exchange: str
 
 
 @dataclass
@@ -99,6 +42,18 @@ class MarketOrder:
 
     def __repr__(self) -> str:
         return f"MarketOrder({self.side.name}, p: {self.price}, s: {self.size}, create time: {datetime.fromtimestamp(self.create_timestamp)}), fee: {self.fee}"
+
+
+class HedgeType(Enum):
+    OPEN = "open"
+    CLOSE = "close"
+
+
+@dataclass
+class HedgeTrade:
+    timestamp: float
+    hedge_type: HedgeType
+    basis: Decimal
 
 
 @dataclass
@@ -250,59 +205,3 @@ class BaseState:
         self.hedge_trades.append(
             HedgeTrade(timestamp=timestamp, hedge_type=hedge_type, basis=basis)
         )
-
-
-class HedgeType(Enum):
-    OPEN = "open"
-    CLOSE = "close"
-
-
-@dataclass
-class HedgeTrade:
-    timestamp: float
-    hedge_type: HedgeType
-    basis: Decimal
-
-
-class CombinedModelHedgeType(Enum):
-    BOTH_OPEN = auto()
-    MODEL1_OPEN = auto()
-    MODEL2_OPEN = auto()
-    BOTH_CLOSE = auto()
-    MODEL1_CLOSE = auto()
-    MODEL2_CLOSE = auto()
-    ONE_OPEN_THE_OTHER_CLOSE = auto()
-
-
-@dataclass
-class CombinedModelHedgeTrade:
-    timestamp: float
-    hedge_type: CombinedModelHedgeType
-    basis: Decimal
-
-
-@dataclass
-class CombinedModelState(BaseState):
-    combined_model_hedge_trades: List[CombinedModelHedgeTrade] = field(
-        default_factory=lambda: []
-    )
-
-    def append_hedge_trade(
-        self, timestamp: float, hedge_type: CombinedModelHedgeType, basis: Decimal
-    ):
-        self.combined_model_hedge_trades.append(
-            CombinedModelHedgeTrade(timestamp, hedge_type, basis)
-        )
-
-
-@dataclass
-class BackTestConfig:
-    fee_rate: Decimal
-    collateral_weight: Decimal
-    start_timestamp: int
-    end_timestamp: int
-    ts_to_stop_open: int
-    ts_to_expiry: int
-    expiration_price: Decimal
-    leverage: Decimal
-    save_dir: str
