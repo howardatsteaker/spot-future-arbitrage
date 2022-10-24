@@ -951,6 +951,7 @@ class MainProcess:
                         resp["worker_id"]
                     )
                     if status == WORKER_STATUS_FINISH:
+                        username = await self.exchange.get_username()
                         balances: List[dict] = await self.exchange.get_balances()
                         usd_info: dict = next(b for b in balances if b["coin"] == "USD")
                         new_usd_borrow: Decimal = Decimal(str(usd_info["spotBorrow"]))
@@ -962,7 +963,7 @@ class MainProcess:
                         new_position: Decimal = self.leverage_info.position_value
                         new_account_value: Decimal = self.leverage_info.account_value
                         log_msg: str = (
-                            f"Funding service deposit ${deposit_amount:.2f} completed\n"
+                            f"{username} requested deposit ${deposit_amount:.2f} completed\n"
                         )
                         log_msg += (
                             f">Account value {account_value} -> {new_account_value}\n"
@@ -1010,6 +1011,7 @@ class MainProcess:
                         resp["worker_id"]
                     )
                     if status == WORKER_STATUS_FINISH:
+                        username = await self.exchange.get_username()
                         balances: List[dict] = await self.exchange.get_balances()
                         usd_info: dict = next(b for b in balances if b["coin"] == "USD")
                         new_usd_borrow: Decimal = Decimal(str(usd_info["spotBorrow"]))
@@ -1020,7 +1022,7 @@ class MainProcess:
                         )
                         new_position: Decimal = self.leverage_info.position_value
                         new_account_value: Decimal = self.leverage_info.account_value
-                        log_msg: str = f"Funding service withdraw ${withdraw_amount:.2f} completed\n"
+                        log_msg: str = f"{username} requested withdraw ${withdraw_amount:.2f} completed\n"
                         log_msg += (
                             f">Account value {account_value} -> {new_account_value}\n"
                         )
