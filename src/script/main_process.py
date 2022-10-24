@@ -45,8 +45,7 @@ class MainProcess:
     INTEREST_RATE_POLLING_INTERVAL = 3600
     FEE_RATE_POLLING_INTERVAL = 300
     COLLATERAL_WEIGHT_POLLING_INTERVAL = 300
-    ACCOUNT_INFO_POLLING_INTERVAL = 3600
-    FUND_MANAGER_POLLING_INTERVAL = 5
+    ACCOUNT_INFO_POLLING_INTERVAL = 5
     RELEASE_DEAD_SUB_PROCESS_INTERVAL = 300
     LOG_SUMMARY_INTERVAL = 3600
     FUNDING_SERVICE_INTERVAL = 600
@@ -98,7 +97,6 @@ class MainProcess:
             self._start_ws_task: asyncio.Task = None
             self._listen_ws_orders_task: asyncio.Task = None
             self._account_info_polling_task: asyncio.Task = None
-            self._fund_manager_polling_task: asyncio.Task = None
             self._release_dead_sub_process_loop_task: asyncio.Task = None
             self._log_summary_polling_task: asyncio.Task = None
             self._apply_funding_service_task: asyncio.Task = None
@@ -195,10 +193,6 @@ class MainProcess:
             self._account_info_polling_task = asyncio.create_task(
                 self._account_info_polling_loop()
             )
-        if self._fund_manager_polling_task is None:
-            self._fund_manager_polling_task = asyncio.create_task(
-                self._fund_manager_polling_loop()
-            )
         if self._listen_ws_orders_task is None:
             self._listen_ws_orders_task = asyncio.create_task(self._listen_ws_orders())
         if self._release_dead_sub_process_loop_task is None:
@@ -239,9 +233,6 @@ class MainProcess:
         if self._account_info_polling_task is not None:
             self._account_info_polling_task.cancel()
             self._account_info_polling_task = None
-        if self._fund_manager_polling_task is not None:
-            self._fund_manager_polling_task.cancel()
-            self._fund_manager_polling_task = None
         if self._listen_ws_orders_task is not None:
             self._listen_ws_orders_task.cancel()
             self._listen_ws_orders_task = None
@@ -450,22 +441,26 @@ class MainProcess:
                 )
                 await asyncio.sleep(5)
 
+    def _update_account_info(self, account_info: dict):
+        account_value = Decimal(str(account_info["totalAccountValue"]))
+        position_value = Decimal(str(account_info["totalPositionSize"]))
+        current_leverage = position_value / account_value
+        self.leverage_info = FtxLeverageInfo(
+            max_leverage=Decimal(str(account_info["leverage"])),
+            account_value=account_value,
+            position_value=position_value,
+            current_leverage=current_leverage,
+        )
+        self._account_info_ready_event.set()
+        for (conn, _) in self._connections.values():
+            conn.send(FtxLeverageMessage(self.leverage_info))
+
     async def _account_info_polling_loop(self):
         while True:
             try:
                 account_info = await self.exchange.get_account()
-                account_value = Decimal(str(account_info["totalAccountValue"]))
-                position_value = Decimal(str(account_info["totalPositionSize"]))
-                current_leverage = position_value / account_value
-                self.leverage_info = FtxLeverageInfo(
-                    max_leverage=Decimal(str(account_info["leverage"])),
-                    account_value=account_value,
-                    position_value=position_value,
-                    current_leverage=current_leverage,
-                )
-                self._account_info_ready_event.set()
-                for (conn, _) in self._connections.values():
-                    conn.send(FtxLeverageMessage(self.leverage_info))
+                self._update_account_info(account_info)
+                await self.fund_manager.update_account_state(account_info)
                 await asyncio.sleep(self.ACCOUNT_INFO_POLLING_INTERVAL)
             except asyncio.CancelledError:
                 raise
@@ -476,22 +471,6 @@ class MainProcess:
                     slack=self.config.slack_config.enable,
                 )
                 await asyncio.sleep(5)
-
-    async def _fund_manager_polling_loop(self):
-        while True:
-            try:
-                account_info = await self.exchange.get_account()
-                await self.fund_manager.update_account_state(account_info)
-                await asyncio.sleep(self.FUND_MANAGER_POLLING_INTERVAL)
-            except asyncio.CancelledError:
-                raise
-            except Exception:
-                self.logger.error(
-                    "Unexpected error while fetching account info.",
-                    exc_info=True,
-                    slack=self.config.slack_config.enable,
-                )
-                await asyncio.sleep(10)
 
     async def _spawn_sub_processes(self):
         while True:
