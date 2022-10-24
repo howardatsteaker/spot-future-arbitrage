@@ -21,7 +21,7 @@ pip install -r requirement.txt
 ```
 
 ```
-pip install git+https://github.com/steakr/funding-service-client.git@0.0.11
+pip install git+https://github.com/steakr/funding-service-client.git@0.0.12
 ```
 
 # Configurations
