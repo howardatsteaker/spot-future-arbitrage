@@ -962,9 +962,7 @@ class MainProcess:
                         )
                         new_position: Decimal = self.leverage_info.position_value
                         new_account_value: Decimal = self.leverage_info.account_value
-                        log_msg: str = (
-                            f"{username} requested deposit ${deposit_amount:.2f} completed\n"
-                        )
+                        log_msg: str = f"{username} requested deposit ${deposit_amount:.2f} completed\n"
                         log_msg += (
                             f">Account value {account_value} -> {new_account_value}\n"
                         )
