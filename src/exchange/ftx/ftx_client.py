@@ -596,6 +596,74 @@ class FtxExchange(ExchangeBase):
         status = await self.get_quote_status(quote_id)
         return status
 
+    async def get_deposit_history(
+        self, start_time: float, end_time: float
+    ) -> List[dict]:
+        client = self._get_rest_client()
+        id_set = set()
+        all_history = []
+        while True:
+            url = (
+                self.REST_URL
+                + f"/wallet/deposits?start_time={start_time}&end_time={end_time}"
+            )
+            headers = self._gen_auth_header("GET", url)
+            async with client.get(url, headers=headers) as res:
+                res_json = await res.json()
+            if res_json["success"]:
+                history: List[dict] = res_json["result"]
+                if len(history) == 0:
+                    break
+                dedupted_history = [his for his in history if his["id"] not in id_set]
+                if len(dedupted_history) == 0:
+                    break
+                all_history.extend(dedupted_history)
+                id_set |= set([his["id"] for his in dedupted_history])
+                end_time = (
+                    min(
+                        [dateutil.parser.parse(his["time"]) for his in dedupted_history]
+                    ).timestamp()
+                    - 0.000001
+                )
+            else:
+                error_msg = res_json["error"]
+                ftx_throw_exception(error_msg)
+        return sorted(all_history, key=lambda his: dateutil.parser.parse(his["time"]))
+
+    async def get_withdraw_history(
+        self, start_time: float, end_time: float
+    ) -> List[dict]:
+        client = self._get_rest_client()
+        id_set = set()
+        all_history = []
+        while True:
+            url = (
+                self.REST_URL
+                + f"/wallet/withdrawals?start_time={start_time}&end_time={end_time}"
+            )
+            headers = self._gen_auth_header("GET", url)
+            async with client.get(url, headers=headers) as res:
+                res_json = await res.json()
+            if res_json["success"]:
+                history: List[dict] = res_json["result"]
+                if len(history) == 0:
+                    break
+                dedupted_history = [his for his in history if his["id"] not in id_set]
+                if len(dedupted_history) == 0:
+                    break
+                all_history.extend(dedupted_history)
+                id_set |= set([his["id"] for his in dedupted_history])
+                end_time = (
+                    min(
+                        [dateutil.parser.parse(his["time"]) for his in dedupted_history]
+                    ).timestamp()
+                    - 0.000001
+                )
+            else:
+                error_msg = res_json["error"]
+                ftx_throw_exception(error_msg)
+        return sorted(all_history, key=lambda his: dateutil.parser.parse(his["time"]))
+
     def ws_register_order_channel(self):
         self._to_subscribe_order_channel = True
 
