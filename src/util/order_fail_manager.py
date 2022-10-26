@@ -1,5 +1,5 @@
-from typing import List
 import time
+from typing import List
 
 
 class OrderFailManager:
@@ -20,5 +20,9 @@ class OrderFailManager:
         if len(self.fail_timestamp_list) == 0:
             return True
         now: float = time.time()
-        self.fail_timestamp_list = [fail_ts for fail_ts in self.fail_timestamp_list if now - fail_ts < self.interval]
+        self.fail_timestamp_list = [
+            fail_ts
+            for fail_ts in self.fail_timestamp_list
+            if now - fail_ts < self.interval
+        ]
         return len(self.fail_timestamp_list) < self.limit

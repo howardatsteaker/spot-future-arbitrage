@@ -44,9 +44,9 @@ from src.indicator.base_indicator import BaseIndicator
 from src.indicator.bollinger import Bollinger, BollingerParams
 from src.indicator.macd import MACD, MACDParams
 from src.indicator.macd_bollinger import MACDBollinger, MACDBollingerParams
+from src.util.order_fail_manager import OrderFailManager
 from src.util.rate_limit import RateLimiter
 from src.util.slack import SlackWrappedLogger
-from src.util.order_fail_manager import OrderFailManager
 
 
 @dataclass
@@ -128,7 +128,7 @@ class SubProcess:
         )  # this lock is used when updating position size, entry price, and open/close position
 
         # order fail manager
-        self.order_fail_manager = OrderFailManager(limit=3, duration=60)
+        self.order_fail_manager = OrderFailManager(limit=3, interval=60)
 
     @property
     def ready(self) -> bool:

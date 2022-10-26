@@ -936,7 +936,7 @@ class MainProcess:
                     username = await self.exchange.get_username()
                     self.logger.warning(
                         f"{username} request deposit for {deposit_amount} USD, but there are only {funding_account_usd_balance} USD in the funding account.",
-                        slack=self.config.slack_config.enable
+                        slack=self.config.slack_config.enable,
                     )
                     deposit_amount = funding_account_usd_balance
                 try:
