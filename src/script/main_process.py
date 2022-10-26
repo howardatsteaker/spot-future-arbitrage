@@ -932,8 +932,14 @@ class MainProcess:
             deposit_amount: Decimal = (position - target_leverage * account_value) / (
                 target_leverage + 1
             )
-            deposit_amount = min(deposit_amount, funding_account_usd_balance)
             if deposit_amount > self.config.funding_service_config.min_deposit_amount:
+                if deposit_amount > funding_account_usd_balance:
+                    username = await self.exchange.get_username()
+                    self.logger.warning(
+                        f"{username} request deposit for {deposit_amount} USD, but there are only {funding_account_usd_balance} USD in the funding account.",
+                        slack=self.config.slack_config.enable
+                    )
+                    deposit_amount = funding_account_usd_balance
                 try:
                     resp = await self._fs_client.request_deposit(
                         "USD", round(float(deposit_amount), 2)
