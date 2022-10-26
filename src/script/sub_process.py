@@ -46,6 +46,7 @@ from src.indicator.macd import MACD, MACDParams
 from src.indicator.macd_bollinger import MACDBollinger, MACDBollingerParams
 from src.util.rate_limit import RateLimiter
 from src.util.slack import SlackWrappedLogger
+from src.util.order_fail_manager import OrderFailManager
 
 
 @dataclass
@@ -125,6 +126,9 @@ class SubProcess:
         self._state_update_lock = (
             asyncio.Lock()
         )  # this lock is used when updating position size, entry price, and open/close position
+
+        # order fail manager
+        self.order_fail_manager = OrderFailManager(limit=3, duration=60)
 
     @property
     def ready(self) -> bool:
@@ -844,6 +848,10 @@ class SubProcess:
             if not self.rate_limiter.ok:
                 return
 
+            # order fail manager
+            if not self.order_fail_manager.is_okay_to_trade:
+                return
+
             # request for budget
             await self._request_for_budget()
             if self._budget <= 0:
@@ -974,6 +982,7 @@ class SubProcess:
                     slack=self.config.slack_config.enable,
                 )
                 spot_result_ok = False
+                self.order_fail_manager.add_fail_record()
             else:
                 spot_order_id = str(spot_order_result["id"])
                 if not self._ws_orders_events.get(spot_order_id):
@@ -986,6 +995,7 @@ class SubProcess:
                     slack=self.config.slack_config.enable,
                 )
                 future_result_ok = False
+                self.order_fail_manager.add_fail_record()
             else:
                 future_order_id = str(future_order_result["id"])
                 if not self._ws_orders_events.get(future_order_id):
@@ -1001,6 +1011,7 @@ class SubProcess:
                             f"Filled size is not matched, {spot_order_msg.market}: {spot_order_msg.filled_size}, {future_order_msg.market}: {future_order_msg.filled_size}",
                             slack=self.config.slack_config.enable,
                         )
+                        self.order_fail_manager.add_fail_record()
                     else:
                         # log open pnl rate, apr
                         real_basis = (
@@ -1056,11 +1067,13 @@ class SubProcess:
                         f"{self.hedge_pair.spot} order {spot_order_id} not found or not closed",
                         slack=self.config.slack_config.enable,
                     )
+                    self.order_fail_manager.add_fail_record()
                 elif spot_order_msg.filled_size == 0:
                     self.logger.warning(
                         f"{self.hedge_pair.spot} market buy order {spot_order_id} closed but filled size is 0",
                         slack=self.config.slack_config.enable,
                     )
+                    self.order_fail_manager.add_fail_record()
 
             if future_result_ok:
                 if future_order_msg is None:
@@ -1068,11 +1081,13 @@ class SubProcess:
                         f"{self.hedge_pair.future} order {future_order_id} not found or not closed",
                         slack=self.config.slack_config.enable,
                     )
+                    self.order_fail_manager.add_fail_record()
                 elif future_order_msg.filled_size == 0:
                     self.logger.warning(
                         f"{self.hedge_pair.future} market sell order {future_order_id} closed but filled size is 0",
                         slack=self.config.slack_config.enable,
                     )
+                    self.order_fail_manager.add_fail_record()
 
     async def _wait_order(self, order_id: str, timeout: float = 3.0) -> FtxOrderMessage:
         event = self._ws_orders_events.get(order_id)
@@ -1203,6 +1218,10 @@ class SubProcess:
         if not self.rate_limiter.ok:
             return
 
+        # order fail manager
+        if not self.order_fail_manager.is_okay_to_trade:
+            return
+
         position_size = min(self.spot_position_size, -self.future_position_size)
 
         # wait ticker notify
@@ -1285,6 +1304,7 @@ class SubProcess:
                 slack=self.config.slack_config.enable,
             )
             spot_result_ok = False
+            self.order_fail_manager.add_fail_record()
         else:
             spot_order_id = str(spot_order_result["id"])
             if not self._ws_orders_events.get(spot_order_id):
@@ -1297,6 +1317,7 @@ class SubProcess:
                 slack=self.config.slack_config.enable,
             )
             future_result_ok = False
+            self.order_fail_manager.add_fail_record()
         else:
             future_order_id = str(future_order_result["id"])
             if not self._ws_orders_events.get(future_order_id):
@@ -1312,6 +1333,7 @@ class SubProcess:
                         f"Filled size is not matched, {spot_order_msg.market}: {spot_order_msg.filled_size}, {future_order_msg.market}: {future_order_msg.filled_size}",
                         slack=self.config.slack_config.enable,
                     )
+                    self.order_fail_manager.add_fail_record()
                 else:
                     # log close pnl rate, apr
                     future_collateral_needed = (
@@ -1350,11 +1372,13 @@ class SubProcess:
                     f"{self.hedge_pair.spot} order {spot_order_id} not found or not closed",
                     slack=self.config.slack_config.enable,
                 )
+                self.order_fail_manager.add_fail_record()
             elif spot_order_msg.filled_size == 0:
                 self.logger.warning(
                     f"{self.hedge_pair.spot} market sell order {spot_order_id} closed but filled size is 0",
                     slack=self.config.slack_config.enable,
                 )
+                self.order_fail_manager.add_fail_record()
 
         if future_result_ok:
             if future_order_msg is None:
@@ -1362,11 +1386,13 @@ class SubProcess:
                     f"{self.hedge_pair.future} order {future_order_id} not found or not closed",
                     slack=self.config.slack_config.enable,
                 )
+                self.order_fail_manager.add_fail_record()
             elif future_order_msg.filled_size == 0:
                 self.logger.warning(
                     f"{self.hedge_pair.future} market buy order {future_order_id} closed but filled size is 0",
                     slack=self.config.slack_config.enable,
                 )
+                self.order_fail_manager.add_fail_record()
 
     async def open_position_loop(self):
         if not self.hedge_pair.can_open:
