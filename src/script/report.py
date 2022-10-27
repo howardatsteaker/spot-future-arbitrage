@@ -49,9 +49,9 @@ class HedgeState:
                 new_size = self.spot_size - size
             else:
                 raise ValueError(f"Invalid side: {side}")
+            self.spot_size = new_size
             if new_size == 0:
                 self.spot_entry_price = None
-                self.spot_size = new_size
             if fee_currency == "USD":
                 self.pnl -= fee
             self.last_spot_fill_price = price
