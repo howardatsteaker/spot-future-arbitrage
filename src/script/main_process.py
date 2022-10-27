@@ -6,7 +6,7 @@ import re
 import time
 from decimal import Decimal
 from multiprocessing.connection import Connection
-from typing import Dict, List, Tuple
+from typing import Callable, Dict, List, Tuple
 
 import dateutil.parser
 from funding_service_client.async_fs_client import FSClient
@@ -114,6 +114,8 @@ class MainProcess:
 
             # funding service
             self._fs_client: FSClient = None
+            self._deposit_history_cache: List[dict] = []
+            self._withdraw_history_cache: List[dict] = []
 
     def _init_get_logger(self):
         log = self.config.log
@@ -928,6 +930,15 @@ class MainProcess:
                     slack=self.config.slack_config.enable,
                 )
                 return
+            net_deposit: Decimal = await self._get_last_24h_net_deposit()
+            quote_for_deposit: Decimal = (
+                self.config.funding_service_config.daily_max_net_deposit - net_deposit
+            )
+            if (
+                quote_for_deposit
+                < self.config.funding_service_config.min_deposit_amount
+            ):
+                return
             if (
                 funding_account_usd_balance
                 < self.config.funding_service_config.min_deposit_amount
@@ -1057,6 +1068,67 @@ class MainProcess:
                     await asyncio.sleep(self.FUNDING_SERVICE_INTERVAL)
         except asyncio.CancelledError:
             raise
+
+    def _drop_outdated_deposit_and_withdraw_histroy_cache(self):
+        now: float = time.time()
+        is_outdated: Callable[[float, dict], bool] = (
+            lambda current_ts, history: current_ts
+            - dateutil.parser.parse(history["time"]).timestamp()
+            > 86400
+        )
+        self._deposit_history_cache = [
+            his for his in self._deposit_history_cache if not is_outdated(now, his)
+        ]
+        self._withdraw_history_cache = [
+            his for his in self._withdraw_history_cache if not is_outdated(now, his)
+        ]
+
+    async def _get_last_24h_net_deposit(self) -> Decimal:
+        self._drop_outdated_deposit_and_withdraw_histroy_cache()
+        end_ts: float = time.time()
+
+        if len(self._deposit_history_cache) == 0:
+            start_ts: float = end_ts - 86400
+        else:
+            start_ts: float = (
+                max(
+                    [
+                        dateutil.parser.parse(his["time"])
+                        for his in self._deposit_history_cache
+                    ]
+                ).timestamp()
+                + 1
+            )
+        deposit_history = await self.exchange.get_deposit_history(start_ts, end_ts)
+        self._deposit_history_cache.extend(deposit_history)
+
+        if len(self._withdraw_history_cache) == 0:
+            start_ts: float = end_ts - 86400
+        else:
+            start_ts: float = (
+                max(
+                    [
+                        dateutil.parser.parse(his["time"])
+                        for his in self._withdraw_history_cache
+                    ]
+                ).timestamp()
+                + 1
+            )
+        withdraw_history = await self.exchange.get_withdraw_history(start_ts, end_ts)
+        self._withdraw_history_cache.extend(withdraw_history)
+
+        net_deposit: Decimal = Decimal(0)
+        for history in self._deposit_history_cache:
+            coin: str = history["coin"]
+            if coin in ("USD", "USDC", "BUSD"):
+                size: Decimal = Decimal(str(history["size"]))
+                net_deposit += size
+        for history in self._withdraw_history_cache:
+            coin: str = history["coin"]
+            if coin in ("USD", "USDC", "BUSD"):
+                size: Decimal = Decimal(str(history["size"]))
+                net_deposit -= size
+        return max(Decimal(0), net_deposit)
 
     async def run(self):
         self.start_network()

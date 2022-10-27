@@ -74,3 +74,4 @@ funding_service:
   min_deposit_amount: 5000
   min_withdraw_amount: 5000
   min_remain: 2000
+  daily_max_net_deposit: 500000

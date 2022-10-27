@@ -192,6 +192,9 @@ class Config:
                     str(data["funding_service"]["min_withdraw_amount"])
                 ),
                 min_remain=Decimal(str(data["funding_service"]["min_remain"])),
+                daily_max_net_deposit=Decimal(
+                    str(data["funding_service"]["daily_max_net_deposit"])
+                ),
             ),
         )
 

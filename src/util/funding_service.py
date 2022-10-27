@@ -11,3 +11,4 @@ class FundingServiceConfig:
     min_deposit_amount: Decimal
     min_withdraw_amount: Decimal
     min_remain: Decimal
+    daily_max_net_deposit: Decimal
