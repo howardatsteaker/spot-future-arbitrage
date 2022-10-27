@@ -28,10 +28,24 @@ pip install git+https://github.com/steakr/funding-service-client.git@0.0.12
 For more information, see [template.yaml](template.yaml)
 
 # Runtime
-python3 main.py -c `your_config_file.yaml`
+```
+python3 main.py -c your_config_file.yaml
+```
 
 # Backtest
 
 ```
 python3 -m src.backtest.main
+```
+
+# Tools
+
+## Daily Backtesting
+```
+python3 -m src.cron.daily_backtest
+```
+
+## Weekly Report
+```
+python3 -m src.script.report -c your_config_file.yaml
 ```

@@ -19,13 +19,14 @@ def save_kline_from_trades(
     end_ts: int,
     resolution: BinanceCandleResolution = BinanceCandleResolution.ONE_HOUR,
     save_dir: str = "local/binance/kline",
+    force_run: bool = False,
 ):
     symbol_path_name = HedgePair.to_dir_name(symbol)
     resolution_rule_str = resolution.to_pandas_resample_rule()
     filename = os.path.join(
         save_dir, symbol_path_name, f"{start_ts}_{end_ts}_{resolution_rule_str}.parquet"
     )
-    if not os.path.exists(filename):
+    if force_run or not os.path.exists(filename):
         data_loader = BinanceDataLoader(data_dir)
         trades_df = data_loader.get_trades_df(start_ts, end_ts)
         klines_df = data_loader.trades_df_2_klines(
@@ -44,13 +45,14 @@ def save_merged_trades(
     start_ts: int,
     end_ts: int,
     save_path: str = "local/binance/merged_trades",
+    force_run: bool = False,
 ):
     future_path_name = HedgePair.to_dir_name(future)
     save_path = os.path.join(save_path, future_path_name)
     filename = os.path.join(save_path, f"{start_ts}_{end_ts}.parquet")
     if not os.path.exists(save_path):
         pathlib.Path(save_path).mkdir(parents=True, exist_ok=True)
-    if not os.path.exists(filename):
+    if force_run or not os.path.exists(filename):
         spot_data_loader = BinanceDataLoader(spot_dir)
         future_data_loader = BinanceDataLoader(future_dir)
         spot_trades_df = spot_data_loader.get_trades_df(start_ts, end_ts)
@@ -90,6 +92,7 @@ def save_merged_kline(
     end_ts: int,
     resolution: BinanceCandleResolution = BinanceCandleResolution.ONE_HOUR,
     save_path: str = "local/binance/merged_kline",
+    force_run: bool = False,
 ):
     future_path_name = HedgePair.to_dir_name(future)
     resolution_rule_str = resolution.to_pandas_resample_rule()
@@ -101,7 +104,7 @@ def save_merged_kline(
     path = pathlib.Path(filename)
     if not path.parent.exists():
         path.parent.mkdir(parents=True, exist_ok=True)
-    if not path.exists():
+    if force_run or not path.exists():
         spot_data_loader = BinanceDataLoader(spot_dir)
         future_data_loader = BinanceDataLoader(future_dir)
         spot_trades_df = spot_data_loader.get_trades_df(start_ts, end_ts)
@@ -142,6 +145,7 @@ def run_binance_data_prepare_process(
     start: float,
     end: float,
     data_dir: str = "local/binance/trades",
+    force_run: bool = False,
 ):
     spot_data_dir = os.path.join(data_dir, HedgePair.to_dir_name(hedge_pair.spot))
     future_data_dir = os.path.join(data_dir, HedgePair.to_dir_name(hedge_pair.future))
@@ -159,10 +163,14 @@ def run_binance_data_prepare_process(
     future_p.join()
 
     print(f"Save spot {hedge_pair.spot} kline from trades")
-    save_kline_from_trades(spot_data_dir, hedge_pair.spot, start, end)
+    save_kline_from_trades(
+        spot_data_dir, hedge_pair.spot, start, end, force_run=force_run
+    )
 
     print(f"Save future {hedge_pair.future} kline from trades")
-    save_kline_from_trades(future_data_dir, hedge_pair.future, start, end)
+    save_kline_from_trades(
+        future_data_dir, hedge_pair.future, start, end, force_run=force_run
+    )
 
     print("Save merged trades")
     save_merged_trades(
@@ -171,6 +179,7 @@ def run_binance_data_prepare_process(
         spot_data_dir,
         start,
         end,
+        force_run=force_run,
     )
 
     print("Save merged kline")
@@ -180,14 +189,5 @@ def run_binance_data_prepare_process(
         spot_data_dir,
         start,
         end,
+        force_run=force_run,
     )
-
-
-if __name__ == "__main__":
-    import time
-    from datetime import datetime
-
-    pair = BinanceUSDTQuaterHedgePair.from_coin("BTC", "221230")
-    st = int(datetime(2022, 9, 22, 8).timestamp())
-    et = int(datetime(2022, 10, 17, 8).timestamp())
-    run_binance_data_prepare_process(pair, st, et)

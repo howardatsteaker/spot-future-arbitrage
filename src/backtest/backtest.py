@@ -13,7 +13,9 @@ from src.exchange.exchange_data_type import Side
 from src.indicator.base_indicator import BaseIndicator
 
 
-def run_backtest(backtest_indicator: BaseIndicator):
+def run_backtest(
+    backtest_indicator: BaseIndicator, params_list: list = None, force_run: bool = False
+):
     trades = pd.read_parquet(backtest_util.get_trades_path(backtest_indicator))
     merged_klines = pd.read_parquet(
         backtest_util.get_merged_klines_path(backtest_indicator)
@@ -22,13 +24,19 @@ def run_backtest(backtest_indicator: BaseIndicator):
     save_path = backtest_indicator.get_save_path()
     save_path_obj = pathlib.Path(save_path)
     summary_path_obj = save_path_obj / "summary.json"
-    if summary_path_obj.exists():
-        print(f"summary file {summary_path_obj} exist")
-        return
+
+    if not force_run:
+        if summary_path_obj.exists():
+            print(f"summary file {summary_path_obj} exist")
+            return
 
     summary_list = []
     index = 0
-    for params in backtest_indicator.generate_params():
+
+    if params_list is None:
+        params_list = backtest_indicator.generate_params()
+
+    for params in params_list:
         print(f"params: {params}")
 
         upper_threshold_df, lower_threshold_df = backtest_indicator.compute_thresholds(
@@ -214,11 +222,11 @@ def run_backtest(backtest_indicator: BaseIndicator):
 
         # plot if not exist
         plot_path = f"{save_path}/plots/plot_{str(index)}.jpg"
-        if not exists(plot_path):
+        if force_run or not exists(plot_path):
             backtest_util.plot_logs(logs, state.hedge_trades, plot_path, to_show=False)
 
         position_logs_path = f"{save_path}/positions/position_{index}.json"
-        if not exists(position_logs_path):
+        if force_run or not exists(position_logs_path):
             position_dict = {
                 "index": index,
                 "params": asdict(params),
