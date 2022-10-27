@@ -90,7 +90,10 @@ class SubProcess:
         self.leverage_info: FtxLeverageInfo = None
 
         self.exchange = FtxExchange(
-            config.api_key, config.api_secret, config.subaccount_name
+            config.api_key,
+            config.api_secret,
+            config.subaccount_name,
+            config.bypass_cloudflare,
         )
         self.exchange.ws_register_ticker_channel([hedge_pair.spot, hedge_pair.future])
 
@@ -776,16 +779,14 @@ class SubProcess:
         if self._budget < max_open_budget:
             fund_needed = max_open_budget - self._budget
             request = FtxFundRequestMessage(
-                coin=self.hedge_pair.coin,
-                fund_needed=fund_needed,
+                coin=self.hedge_pair.coin, fund_needed=fund_needed,
             )
             self.conn.send(request)
 
             # await fund response
             try:
                 await asyncio.wait_for(
-                    self._fund_manager_response_event.wait(),
-                    timeout=1,
+                    self._fund_manager_response_event.wait(), timeout=1,
                 )
             except asyncio.TimeoutError:
                 self.logger.warning(

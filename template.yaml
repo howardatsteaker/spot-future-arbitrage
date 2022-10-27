@@ -3,6 +3,7 @@ exchange:
   api_key: ''
   api_secret: ''
   subaccount_name: ''
+  bypass_cloudflare: True
 
 interest_rate:
   ignore: False  # if True, interest_rate will be set to zero

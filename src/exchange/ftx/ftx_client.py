@@ -17,7 +17,8 @@ from src.exchange.ftx.ftx_error import ftx_throw_exception
 
 
 class FtxExchange(ExchangeBase):
-    REST_URL = "https://ftx.com/api"
+    BASE_REST_URL = "https://ftx.com/api"
+    BYPASS_CLOUDFLARE_REST_URL = "https://api.ftx.com/api"
     WS_URL = "wss://ftx.com/ws"
 
     _logger = None
@@ -29,11 +30,19 @@ class FtxExchange(ExchangeBase):
         return self._logger
 
     def __init__(
-        self, api_key: str, api_secret: str, subaccount_name: str = None
+        self,
+        api_key: str,
+        api_secret: str,
+        subaccount_name: str = None,
+        bypass_cloudflare: bool = False,
     ) -> None:
         self._api_key = api_key
         self._api_secret = api_secret
         self._subaccount_name = subaccount_name
+        if bypass_cloudflare:
+            self.rest_url = self.BASE_REST_URL
+        else:
+            self.rest_url = self.BYPASS_CLOUDFLARE_REST_URL
         self._rest_client = None
         self._username = None
 
@@ -92,7 +101,7 @@ class FtxExchange(ExchangeBase):
 
     async def get_markets(self) -> List[dict]:
         client = self._get_rest_client()
-        url = self.REST_URL + "/markets"
+        url = self.rest_url + "/markets"
         async with client.get(url) as res:
             json_res = await res.json()
             if json_res["success"]:
@@ -129,7 +138,7 @@ class FtxExchange(ExchangeBase):
         client = self._get_rest_client()
         while True:
             url = (
-                self.REST_URL
+                self.rest_url
                 + f"/markets/{symbol}/candles?resolution={resolution.value}&start_time={start_time}&end_time={end_time}"
             )
             async with client.get(url) as res:
@@ -165,7 +174,7 @@ class FtxExchange(ExchangeBase):
         all_fills = []
         id_set = set()
         while True:
-            url = self.REST_URL + f"/fills?start_time={start_time}&end_time={end_time}"
+            url = self.rest_url + f"/fills?start_time={start_time}&end_time={end_time}"
             if symbol:
                 url += f"&market={symbol}"
             headers = self._gen_auth_header("GET", url)
@@ -192,7 +201,7 @@ class FtxExchange(ExchangeBase):
 
     async def get_account(self) -> dict:
         client = self._get_rest_client()
-        url = self.REST_URL + "/account"
+        url = self.rest_url + "/account"
         headers = self._gen_auth_header("GET", url)
         async with client.get(url, headers=headers) as res:
             json_res = await res.json()
@@ -204,7 +213,7 @@ class FtxExchange(ExchangeBase):
 
     async def set_leverage(self, leverage: int):
         client = self._get_rest_client()
-        url = self.REST_URL + "/account/leverage"
+        url = self.rest_url + "/account/leverage"
         data = {"leverage": leverage}
         headers = self._gen_auth_header("POST", url, body=data)
         async with client.post(url, headers=headers, json=data) as res:
@@ -217,7 +226,7 @@ class FtxExchange(ExchangeBase):
         self, start_time: float = None, end_time: float = None
     ) -> List[dict]:
         client = self._get_rest_client()
-        url = self.REST_URL + "/spot_margin/history"
+        url = self.rest_url + "/spot_margin/history"
         data = {}
         if start_time:
             data["start_time"] = start_time
@@ -249,7 +258,7 @@ class FtxExchange(ExchangeBase):
 
     async def get_coins(self) -> List[dict]:
         client = self._get_rest_client()
-        url = self.REST_URL + "/wallet/coins"
+        url = self.rest_url + "/wallet/coins"
         headers = self._gen_auth_header("GET", url)
         async with client.get(url, headers=headers) as res:
             json_res = await res.json()
@@ -276,7 +285,7 @@ class FtxExchange(ExchangeBase):
         else:
             assert not post_only, "post_only cannot be used with market order"
         client = self._get_rest_client()
-        url = self.REST_URL + "/orders"
+        url = self.rest_url + "/orders"
         data = {
             "market": market,
             "side": side.value,
@@ -369,7 +378,7 @@ class FtxExchange(ExchangeBase):
 
     async def cancel_order(self, order_id: str) -> bool:
         client = self._get_rest_client()
-        url = self.REST_URL + f"/orders/{order_id}"
+        url = self.rest_url + f"/orders/{order_id}"
         headers = self._gen_auth_header("DELETE", url)
         async with client.delete(url, headers=headers) as res:
             res_json = await res.json()
@@ -401,7 +410,7 @@ class FtxExchange(ExchangeBase):
             stop_iter = False
             while not stop_iter:
                 url = (
-                    self.REST_URL
+                    self.rest_url
                     + f"/fills?market={symbol}&start_time=0&end_time={end_time}"
                 )
                 headers = self._gen_auth_header("GET", url)
@@ -460,7 +469,7 @@ class FtxExchange(ExchangeBase):
 
     async def get_positions(self):
         client = self._get_rest_client()
-        url = self.REST_URL + "/positions"
+        url = self.rest_url + "/positions"
         headers = self._gen_auth_header("GET", url)
         async with client.get(url, headers=headers) as res:
             json_res = await res.json()
@@ -472,7 +481,7 @@ class FtxExchange(ExchangeBase):
 
     async def get_future(self, symbol: str):
         client = self._get_rest_client()
-        url = self.REST_URL + f"/futures/{symbol}"
+        url = self.rest_url + f"/futures/{symbol}"
         headers = self._gen_auth_header("GET", url)
         async with client.get(url, headers=headers) as res:
             json_res = await res.json()
@@ -484,7 +493,7 @@ class FtxExchange(ExchangeBase):
 
     async def get_balances(self):
         client = self._get_rest_client()
-        url = self.REST_URL + "/wallet/balances"
+        url = self.rest_url + "/wallet/balances"
         headers = self._gen_auth_header("GET", url)
         async with client.get(url, headers=headers) as res:
             json_res = await res.json()
@@ -496,7 +505,7 @@ class FtxExchange(ExchangeBase):
 
     async def get_order(self, order_id: str) -> dict:
         client = self._get_rest_client()
-        url = self.REST_URL + f"/orders/{order_id}"
+        url = self.rest_url + f"/orders/{order_id}"
         headers = self._gen_auth_header("GET", url)
         async with client.get(url, headers=headers) as res:
             json_res = await res.json()
@@ -523,7 +532,7 @@ class FtxExchange(ExchangeBase):
         id_set = set()
         while True:
             url = (
-                self.REST_URL
+                self.rest_url
                 + f"/markets/{symbol}/trades?start_time={start_time}&end_time={end_time}"
             )
 
@@ -549,7 +558,7 @@ class FtxExchange(ExchangeBase):
         Returns quote id
         """
         client = self._get_rest_client()
-        url = self.REST_URL + "/otc/quotes"
+        url = self.rest_url + "/otc/quotes"
         data = {"fromCoin": from_coin, "toCoin": to_coin, "size": str(size)}
         headers = self._gen_auth_header("POST", url, body=data)
         async with client.post(url, headers=headers, json=data) as res:
@@ -565,7 +574,7 @@ class FtxExchange(ExchangeBase):
     async def accepte_quote(self, quote_id: str):
         """Accept OTC quote"""
         client = self._get_rest_client()
-        url = self.REST_URL + f"/otc/quotes/{quote_id}/accept"
+        url = self.rest_url + f"/otc/quotes/{quote_id}/accept"
         headers = self._gen_auth_header("POST", url)
         async with client.post(url, headers=headers) as res:
             json_res = await res.json()
@@ -578,7 +587,7 @@ class FtxExchange(ExchangeBase):
     async def get_quote_status(self, quote_id: str):
         """Accept OTC quote"""
         client = self._get_rest_client()
-        url = self.REST_URL + f"/otc/quotes/{quote_id}"
+        url = self.rest_url + f"/otc/quotes/{quote_id}"
         headers = self._gen_auth_header("GET", url)
         async with client.get(url, headers=headers) as res:
             json_res = await res.json()
@@ -604,7 +613,7 @@ class FtxExchange(ExchangeBase):
         all_history = []
         while True:
             url = (
-                self.REST_URL
+                self.rest_url
                 + f"/wallet/deposits?start_time={start_time}&end_time={end_time}"
             )
             headers = self._gen_auth_header("GET", url)
@@ -638,7 +647,7 @@ class FtxExchange(ExchangeBase):
         all_history = []
         while True:
             url = (
-                self.REST_URL
+                self.rest_url
                 + f"/wallet/withdrawals?start_time={start_time}&end_time={end_time}"
             )
             headers = self._gen_auth_header("GET", url)
