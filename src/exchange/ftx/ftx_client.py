@@ -676,7 +676,8 @@ class FtxExchange(ExchangeBase):
     async def test_cloudflare_bypass(self) -> bool:
         url = "https://api.ftx.com/api/fast_access_health_check"
         client = self._get_rest_client()
-        async with client.get(url) as resp:
+        headers = self._gen_auth_header('GET', url)
+        async with client.get(url, headers=headers) as resp:
             return resp.status == 200
 
     def ws_register_order_channel(self):
