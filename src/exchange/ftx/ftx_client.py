@@ -39,10 +39,10 @@ class FtxExchange(ExchangeBase):
         self._api_key = api_key
         self._api_secret = api_secret
         self._subaccount_name = subaccount_name
-        if bypass_cloudflare:
-            self.rest_url = self.BASE_REST_URL
-        else:
+        if bypass_cloudflare and self.test_cloudflare_bypass():
             self.rest_url = self.BYPASS_CLOUDFLARE_REST_URL
+        else:
+            self.rest_url = self.BASE_REST_URL
         self._rest_client = None
         self._username = None
 
@@ -672,6 +672,12 @@ class FtxExchange(ExchangeBase):
                 error_msg = res_json["error"]
                 ftx_throw_exception(error_msg)
         return sorted(all_history, key=lambda his: dateutil.parser.parse(his["time"]))
+
+    async def test_cloudflare_bypass(self) -> bool:
+        url = "https://api.ftx.com/api/fast_access_health_check"
+        client = self._get_rest_client()
+        async with client.get(url) as resp:
+            return resp.status == 200
 
     def ws_register_order_channel(self):
         self._to_subscribe_order_channel = True
