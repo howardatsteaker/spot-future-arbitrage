@@ -3,6 +3,7 @@ import logging
 import multiprocessing as mp
 import pathlib
 import re
+import sys
 import time
 from decimal import Decimal
 from multiprocessing.connection import Connection
@@ -54,9 +55,7 @@ class MainProcess:
         self.logger = self._init_get_logger()
         if config.exchange == Exchange.FTX:
             self.exchange = FtxExchange(
-                config.api_key,
-                config.api_secret,
-                config.subaccount_name,
+                config.api_key, config.api_secret, config.subaccount_name,
             )
             self.trading_rules: Dict[str, FtxTradingRule] = {}
             self.hedge_pairs: Dict[str, FtxHedgePair] = {}
@@ -264,6 +263,11 @@ class MainProcess:
                 await asyncio.sleep(self.MARKET_STATUS_POLLING_INTERVAL)
             except asyncio.CancelledError:
                 raise
+            except BlockingIOError:
+                self.logger.error(
+                    "System exit", exc_info=True, slack=self.config.slack_config.enable,
+                )
+                sys.exit(1)
             except Exception:
                 self.logger.error(
                     "Unexpected error while fetching market status.",
@@ -408,6 +412,11 @@ class MainProcess:
                 await asyncio.sleep(self.INTEREST_RATE_POLLING_INTERVAL)
             except asyncio.CancelledError:
                 raise
+            except BlockingIOError:
+                self.logger.error(
+                    "System exit", exc_info=True, slack=self.config.slack_config.enable,
+                )
+                sys.exit(1)
             except Exception:
                 self.logger.error(
                     "Unexpected error while fetching USD interest rate.",
@@ -429,6 +438,11 @@ class MainProcess:
                 await asyncio.sleep(self.FEE_RATE_POLLING_INTERVAL)
             except asyncio.CancelledError:
                 raise
+            except BlockingIOError:
+                self.logger.error(
+                    "System exit", exc_info=True, slack=self.config.slack_config.enable,
+                )
+                sys.exit(1)
             except Exception:
                 self.logger.error(
                     "Unexpected error while fetching account fee rate.",
@@ -455,6 +469,11 @@ class MainProcess:
                 await asyncio.sleep(self.COLLATERAL_WEIGHT_POLLING_INTERVAL)
             except asyncio.CancelledError:
                 raise
+            except BlockingIOError:
+                self.logger.error(
+                    "System exit", exc_info=True, slack=self.config.slack_config.enable,
+                )
+                sys.exit(1)
             except Exception:
                 self.logger.error(
                     "Unexpected error while fetching coin collateral weights.",
@@ -486,6 +505,11 @@ class MainProcess:
                 await asyncio.sleep(self.ACCOUNT_INFO_POLLING_INTERVAL)
             except asyncio.CancelledError:
                 raise
+            except BlockingIOError:
+                self.logger.error(
+                    "System exit", exc_info=True, slack=self.config.slack_config.enable,
+                )
+                sys.exit(1)
             except Exception:
                 self.logger.error(
                     "Unexpected error while fetching account info.",
@@ -558,6 +582,11 @@ class MainProcess:
 
             except asyncio.CancelledError:
                 raise
+            except BlockingIOError:
+                self.logger.error(
+                    "System exit", exc_info=True, slack=self.config.slack_config.enable,
+                )
+                sys.exit(1)
             except Exception as e:
                 self.logger.error(
                     f"Unexpected error while spawn new sub process. {e}",
@@ -1137,6 +1166,6 @@ class MainProcess:
         try:
             while True:
                 await asyncio.sleep(600)
-        except KeyboardInterrupt:
+        except (KeyboardInterrupt, SystemExit):
             self.stop_network()
             await self.exchange.close()
