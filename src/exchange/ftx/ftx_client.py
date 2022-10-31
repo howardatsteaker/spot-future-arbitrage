@@ -31,10 +31,7 @@ class FtxExchange(ExchangeBase):
         return self._logger
 
     def __init__(
-        self,
-        api_key: str,
-        api_secret: str,
-        subaccount_name: str = None,
+        self, api_key: str, api_secret: str, subaccount_name: str = None,
     ) -> None:
         self._api_key = api_key
         self._api_secret = api_secret

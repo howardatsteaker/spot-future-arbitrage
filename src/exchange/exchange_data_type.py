@@ -143,18 +143,11 @@ class ExchangeBase:
         raise NotImplementedError
 
     async def get_candles(
-        self,
-        symbol: str,
-        resolution: CandleResolution,
-        start_time: int,
-        end_time: int,
+        self, symbol: str, resolution: CandleResolution, start_time: int, end_time: int,
     ) -> List[Kline]:
         raise NotImplementedError
 
     async def get_trades(
-        self,
-        symbol: str,
-        start_time: float,
-        end_time: float,
+        self, symbol: str, start_time: float, end_time: float,
     ) -> List[Trade]:
         raise NotImplementedError

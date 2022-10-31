@@ -187,7 +187,7 @@ async def main():
     df = pd.DataFrame(balance_history, columns=["datetime", "balance"])
     df["duration"] = df["datetime"].shift(-1) - df["datetime"]
     df.loc[df.index[-1], "duration"] = expiry_dt - df["datetime"].iloc[-1]
-    df["duration_ts"] = df["duration"].values.astype("int64") // 10**9
+    df["duration_ts"] = df["duration"].values.astype("int64") // 10 ** 9
     df["balance"] = df["balance"].astype("float64")
 
     # filter datetime with start_time
