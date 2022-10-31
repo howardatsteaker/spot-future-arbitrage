@@ -57,7 +57,6 @@ class MainProcess:
                 config.api_key,
                 config.api_secret,
                 config.subaccount_name,
-                config.bypass_cloudflare,
             )
             self.trading_rules: Dict[str, FtxTradingRule] = {}
             self.hedge_pairs: Dict[str, FtxHedgePair] = {}

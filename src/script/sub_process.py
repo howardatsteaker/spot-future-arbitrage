@@ -93,7 +93,6 @@ class SubProcess:
             config.api_key,
             config.api_secret,
             config.subaccount_name,
-            config.bypass_cloudflare,
         )
         self.exchange.ws_register_ticker_channel([hedge_pair.spot, hedge_pair.future])
 
