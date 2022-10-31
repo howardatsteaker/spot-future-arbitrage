@@ -413,7 +413,7 @@ class FtxExchange(ExchangeBase):
         if position == 0:
             return []
         else:
-            if self._is_bypass_cloudflare():
+            if self._is_bypass_cloudflare:
                 endpoint = self.BYPASS_CLOUDFLARE_REST_URL
             else:
                 endpoint = self.BASE_REST_URL
@@ -511,7 +511,7 @@ class FtxExchange(ExchangeBase):
 
     async def get_balances(self):
         client = self._get_rest_client()
-        if self._is_bypass_cloudflare():
+        if self._is_bypass_cloudflare:
             url = self.BYPASS_CLOUDFLARE_REST_URL + "/wallet/balances"
         else:
             url = self.BASE_REST_URL + "/wallet/balances"
