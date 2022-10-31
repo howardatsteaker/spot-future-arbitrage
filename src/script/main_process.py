@@ -457,7 +457,7 @@ class MainProcess:
                 raise
             except Exception:
                 self.logger.error(
-                    "Unexpected error while fetching account fee rate.",
+                    "Unexpected error while fetching coin collateral weights.",
                     exc_info=True,
                     slack=self.config.slack_config.enable,
                 )
