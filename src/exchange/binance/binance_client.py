@@ -79,7 +79,10 @@ class BinanceSpotExchange(ExchangeBase):
         )
 
     async def get_one_hour_trades(
-        self, symbol: str, start_time_ms: int, end_time_ms: int,
+        self,
+        symbol: str,
+        start_time_ms: int,
+        end_time_ms: int,
     ) -> List[Trade]:
         client = self._get_rest_client()
         url = self.URL + SPOT_CONSTANTS.AGG_TRADES_URL
@@ -108,7 +111,10 @@ class BinanceSpotExchange(ExchangeBase):
         return sorted(all_trades, key=lambda trade: trade["id"])
 
     async def get_trades(
-        self, symbol: str, start_time: float, end_time: float,
+        self,
+        symbol: str,
+        start_time: float,
+        end_time: float,
     ) -> List[Trade]:
         all_trades = []
         id_set = set()
@@ -203,7 +209,10 @@ class BinanceUSDMarginFuturesExchange(ExchangeBase):
         )
 
     async def get_trades(
-        self, symbol: str, start_time: float, end_time: float,
+        self,
+        symbol: str,
+        start_time: float,
+        end_time: float,
     ) -> List[Trade]:
         client = self._get_rest_client()
         url = self.URL + FUTURES_CONSTANTS.AGG_TRADES_URL

@@ -39,7 +39,6 @@ class Config:
         api_key: str,
         api_secret: str,
         subaccount_name: str,
-        bypass_cloudflare: bool,
         ignore_interest_rate: bool,
         interest_rate_lookback_days: int,
         estimated_borrowing_days: Decimal,
@@ -71,7 +70,6 @@ class Config:
         self.api_key = api_key
         self.api_secret = api_secret
         self.subaccount_name = subaccount_name
-        self.bypass_cloudflare = bypass_cloudflare
         self.ignore_interest_rate = ignore_interest_rate
         self.interest_rate_lookback_days = interest_rate_lookback_days
         self.estimated_borrowing_days = estimated_borrowing_days
@@ -129,7 +127,6 @@ class Config:
             api_key=data["exchange"]["api_key"],
             api_secret=data["exchange"]["api_secret"],
             subaccount_name=data["exchange"]["subaccount_name"],
-            bypass_cloudflare=data["exchange"]["bypass_cloudflare"],
             ignore_interest_rate=data["interest_rate"]["ignore"],
             interest_rate_lookback_days=data["interest_rate"]["lookback_days"],
             estimated_borrowing_days=Decimal(

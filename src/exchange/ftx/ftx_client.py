@@ -8,6 +8,7 @@ from typing import Dict, List
 import aiohttp
 import dateutil.parser
 import pytz
+import requests
 from requests import Request
 
 from src.exchange.exchange_data_type import ExchangeBase, Kline, Trade
@@ -34,17 +35,17 @@ class FtxExchange(ExchangeBase):
         api_key: str,
         api_secret: str,
         subaccount_name: str = None,
-        bypass_cloudflare: bool = False,
     ) -> None:
         self._api_key = api_key
         self._api_secret = api_secret
         self._subaccount_name = subaccount_name
-        if bypass_cloudflare and self.test_cloudflare_bypass():
-            self.rest_url = self.BYPASS_CLOUDFLARE_REST_URL
-        else:
-            self.rest_url = self.BASE_REST_URL
         self._rest_client = None
         self._username = None
+
+        # bypass cloudflare
+        self._is_bypass_cloudflare: bool = False
+        if self._test_cloudflare_bypass():
+            self._is_bypass_cloudflare = True
 
         # web socket
         self._to_subscribe_order_channel = False
@@ -101,7 +102,7 @@ class FtxExchange(ExchangeBase):
 
     async def get_markets(self) -> List[dict]:
         client = self._get_rest_client()
-        url = self.rest_url + "/markets"
+        url = self.BASE_REST_URL + "/markets"
         async with client.get(url) as res:
             json_res = await res.json()
             if json_res["success"]:
@@ -138,7 +139,7 @@ class FtxExchange(ExchangeBase):
         client = self._get_rest_client()
         while True:
             url = (
-                self.rest_url
+                self.BASE_REST_URL
                 + f"/markets/{symbol}/candles?resolution={resolution.value}&start_time={start_time}&end_time={end_time}"
             )
             async with client.get(url) as res:
@@ -170,11 +171,15 @@ class FtxExchange(ExchangeBase):
         return list(map(self.map_kline, all_candles))
 
     async def get_fills(self, start_time: float, end_time: float, symbol: str = None):
+        if self._is_bypass_cloudflare:
+            endpoint = self.BYPASS_CLOUDFLARE_REST_URL
+        else:
+            endpoint = self.BASE_REST_URL
         client = self._get_rest_client()
         all_fills = []
         id_set = set()
         while True:
-            url = self.rest_url + f"/fills?start_time={start_time}&end_time={end_time}"
+            url = endpoint + f"/fills?start_time={start_time}&end_time={end_time}"
             if symbol:
                 url += f"&market={symbol}"
             headers = self._gen_auth_header("GET", url)
@@ -201,7 +206,7 @@ class FtxExchange(ExchangeBase):
 
     async def get_account(self) -> dict:
         client = self._get_rest_client()
-        url = self.rest_url + "/account"
+        url = self.BASE_REST_URL + "/account"
         headers = self._gen_auth_header("GET", url)
         async with client.get(url, headers=headers) as res:
             json_res = await res.json()
@@ -213,7 +218,7 @@ class FtxExchange(ExchangeBase):
 
     async def set_leverage(self, leverage: int):
         client = self._get_rest_client()
-        url = self.rest_url + "/account/leverage"
+        url = self.BASE_REST_URL + "/account/leverage"
         data = {"leverage": leverage}
         headers = self._gen_auth_header("POST", url, body=data)
         async with client.post(url, headers=headers, json=data) as res:
@@ -226,7 +231,7 @@ class FtxExchange(ExchangeBase):
         self, start_time: float = None, end_time: float = None
     ) -> List[dict]:
         client = self._get_rest_client()
-        url = self.rest_url + "/spot_margin/history"
+        url = self.BASE_REST_URL + "/spot_margin/history"
         data = {}
         if start_time:
             data["start_time"] = start_time
@@ -258,7 +263,7 @@ class FtxExchange(ExchangeBase):
 
     async def get_coins(self) -> List[dict]:
         client = self._get_rest_client()
-        url = self.rest_url + "/wallet/coins"
+        url = self.BASE_REST_URL + "/wallet/coins"
         headers = self._gen_auth_header("GET", url)
         async with client.get(url, headers=headers) as res:
             json_res = await res.json()
@@ -285,7 +290,10 @@ class FtxExchange(ExchangeBase):
         else:
             assert not post_only, "post_only cannot be used with market order"
         client = self._get_rest_client()
-        url = self.rest_url + "/orders"
+        if self._is_bypass_cloudflare:
+            url = self.BYPASS_CLOUDFLARE_REST_URL + "/orders"
+        else:
+            url = self.BASE_REST_URL + "/orders"
         data = {
             "market": market,
             "side": side.value,
@@ -378,7 +386,10 @@ class FtxExchange(ExchangeBase):
 
     async def cancel_order(self, order_id: str) -> bool:
         client = self._get_rest_client()
-        url = self.rest_url + f"/orders/{order_id}"
+        if self._is_bypass_cloudflare:
+            url = self.BYPASS_CLOUDFLARE_REST_URL + f"/orders/{order_id}"
+        else:
+            url = self.BASE_REST_URL + f"/orders/{order_id}"
         headers = self._gen_auth_header("DELETE", url)
         async with client.delete(url, headers=headers) as res:
             res_json = await res.json()
@@ -402,6 +413,10 @@ class FtxExchange(ExchangeBase):
         if position == 0:
             return []
         else:
+            if self._is_bypass_cloudflare():
+                endpoint = self.BYPASS_CLOUDFLARE_REST_URL
+            else:
+                endpoint = self.BASE_REST_URL
             client = self._get_rest_client()
             temp_position = position
             all_fills = []
@@ -410,7 +425,7 @@ class FtxExchange(ExchangeBase):
             stop_iter = False
             while not stop_iter:
                 url = (
-                    self.rest_url
+                    endpoint
                     + f"/fills?market={symbol}&start_time=0&end_time={end_time}"
                 )
                 headers = self._gen_auth_header("GET", url)
@@ -469,7 +484,10 @@ class FtxExchange(ExchangeBase):
 
     async def get_positions(self):
         client = self._get_rest_client()
-        url = self.rest_url + "/positions"
+        if self._is_bypass_cloudflare:
+            url = self.BYPASS_CLOUDFLARE_REST_URL + "/positions"
+        else:
+            url = self.BASE_REST_URL + "/positions"
         headers = self._gen_auth_header("GET", url)
         async with client.get(url, headers=headers) as res:
             json_res = await res.json()
@@ -481,7 +499,7 @@ class FtxExchange(ExchangeBase):
 
     async def get_future(self, symbol: str):
         client = self._get_rest_client()
-        url = self.rest_url + f"/futures/{symbol}"
+        url = self.BASE_REST_URL + f"/futures/{symbol}"
         headers = self._gen_auth_header("GET", url)
         async with client.get(url, headers=headers) as res:
             json_res = await res.json()
@@ -493,7 +511,10 @@ class FtxExchange(ExchangeBase):
 
     async def get_balances(self):
         client = self._get_rest_client()
-        url = self.rest_url + "/wallet/balances"
+        if self._is_bypass_cloudflare():
+            url = self.BYPASS_CLOUDFLARE_REST_URL + "/wallet/balances"
+        else:
+            url = self.BASE_REST_URL + "/wallet/balances"
         headers = self._gen_auth_header("GET", url)
         async with client.get(url, headers=headers) as res:
             json_res = await res.json()
@@ -505,7 +526,7 @@ class FtxExchange(ExchangeBase):
 
     async def get_order(self, order_id: str) -> dict:
         client = self._get_rest_client()
-        url = self.rest_url + f"/orders/{order_id}"
+        url = self.BASE_REST_URL + f"/orders/{order_id}"
         headers = self._gen_auth_header("GET", url)
         async with client.get(url, headers=headers) as res:
             json_res = await res.json()
@@ -532,7 +553,7 @@ class FtxExchange(ExchangeBase):
         id_set = set()
         while True:
             url = (
-                self.rest_url
+                self.BASE_REST_URL
                 + f"/markets/{symbol}/trades?start_time={start_time}&end_time={end_time}"
             )
 
@@ -558,7 +579,7 @@ class FtxExchange(ExchangeBase):
         Returns quote id
         """
         client = self._get_rest_client()
-        url = self.rest_url + "/otc/quotes"
+        url = self.BASE_REST_URL + "/otc/quotes"
         data = {"fromCoin": from_coin, "toCoin": to_coin, "size": str(size)}
         headers = self._gen_auth_header("POST", url, body=data)
         async with client.post(url, headers=headers, json=data) as res:
@@ -574,7 +595,7 @@ class FtxExchange(ExchangeBase):
     async def accepte_quote(self, quote_id: str):
         """Accept OTC quote"""
         client = self._get_rest_client()
-        url = self.rest_url + f"/otc/quotes/{quote_id}/accept"
+        url = self.BASE_REST_URL + f"/otc/quotes/{quote_id}/accept"
         headers = self._gen_auth_header("POST", url)
         async with client.post(url, headers=headers) as res:
             json_res = await res.json()
@@ -587,7 +608,7 @@ class FtxExchange(ExchangeBase):
     async def get_quote_status(self, quote_id: str):
         """Accept OTC quote"""
         client = self._get_rest_client()
-        url = self.rest_url + f"/otc/quotes/{quote_id}"
+        url = self.BASE_REST_URL + f"/otc/quotes/{quote_id}"
         headers = self._gen_auth_header("GET", url)
         async with client.get(url, headers=headers) as res:
             json_res = await res.json()
@@ -613,7 +634,7 @@ class FtxExchange(ExchangeBase):
         all_history = []
         while True:
             url = (
-                self.rest_url
+                self.BASE_REST_URL
                 + f"/wallet/deposits?start_time={start_time}&end_time={end_time}"
             )
             headers = self._gen_auth_header("GET", url)
@@ -647,7 +668,7 @@ class FtxExchange(ExchangeBase):
         all_history = []
         while True:
             url = (
-                self.rest_url
+                self.BASE_REST_URL
                 + f"/wallet/withdrawals?start_time={start_time}&end_time={end_time}"
             )
             headers = self._gen_auth_header("GET", url)
@@ -673,12 +694,11 @@ class FtxExchange(ExchangeBase):
                 ftx_throw_exception(error_msg)
         return sorted(all_history, key=lambda his: dateutil.parser.parse(his["time"]))
 
-    async def test_cloudflare_bypass(self) -> bool:
+    def _test_cloudflare_bypass(self) -> bool:
         url = "https://api.ftx.com/api/fast_access_health_check"
-        client = self._get_rest_client()
-        headers = self._gen_auth_header('GET', url)
-        async with client.get(url, headers=headers) as resp:
-            return resp.status == 200
+        headers = self._gen_auth_header("GET", url)
+        resp: requests.Response = requests.get(url, headers=headers)
+        return resp.status_code == 200
 
     def ws_register_order_channel(self):
         self._to_subscribe_order_channel = True
