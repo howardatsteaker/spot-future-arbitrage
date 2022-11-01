@@ -329,11 +329,13 @@ class MainProcess:
 
         # blacklist coins with low collateral weight
         await self._collateral_weights_ready_event.wait()
-        low_weight_coins: List[str] = [
-            coin
-            for coin, weight in self.collateral_weights.items()
-            if weight.weight < 0.1
-        ]
+        low_weight_coins: List[str] = []
+        for coin, pair in hedge_pairs.items():
+            if (
+                self.collateral_weights.get(coin) is None
+                or self.collateral_weights[coin].weight < 0.1
+            ):
+                low_weight_coins.append(coin)
 
         # handle whitelist
         if len(self.config.whitelist) == 0:
