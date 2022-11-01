@@ -327,6 +327,14 @@ class MainProcess:
                 low_volume_coins.append(coin)
                 continue
 
+        # blacklist coins with low collateral weight
+        await self._collateral_weights_ready_event.wait()
+        low_weight_coins: List[str] = [
+            coin
+            for coin, weight in self.collateral_weights.items()
+            if weight.weight < 0.1
+        ]
+
         # handle whitelist
         if len(self.config.whitelist) == 0:
             self.hedge_pairs.update(hedge_pairs)
@@ -345,7 +353,9 @@ class MainProcess:
                     )
 
         # handle blacklist
-        for coin in set(self.config.blacklist).union(low_volume_coins):
+        for coin in (
+            set(self.config.blacklist).union(low_volume_coins).union(low_weight_coins)
+        ):
             if self.hedge_pairs.get(coin):
                 if coin in coins_that_have_position:
                     self.hedge_pairs[coin].trade_type = TradeType.CLOSE_ONLY
