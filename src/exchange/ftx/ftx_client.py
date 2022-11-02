@@ -465,6 +465,17 @@ class FtxExchange(ExchangeBase):
             error_msg = json_res["error"]
             ftx_throw_exception(error_msg)
 
+    async def get_futures(self) -> List[dict]:
+        client = self._get_rest_client()
+        url = self.BASE_REST_URL + f"/futures"
+        async with client.get(url) as res:
+            json_res = await res.json()
+        if json_res["success"]:
+            return json_res["result"]
+        else:
+            error_msg = json_res["error"]
+            ftx_throw_exception(error_msg)
+
     async def get_future(self, symbol: str):
         client = self._get_rest_client()
         url = self.BASE_REST_URL + f"/futures/{symbol}"
