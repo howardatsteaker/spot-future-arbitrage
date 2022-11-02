@@ -10,6 +10,7 @@ import dateutil.parser
 import pytz
 import requests
 from requests import Request
+import ciso8601
 
 from src.exchange.exchange_data_type import ExchangeBase, Kline, Trade
 from src.exchange.ftx.ftx_data_type import (FtxCandleResolution, FtxOrderType,
@@ -436,48 +437,34 @@ class FtxExchange(ExchangeBase):
                 dedup_fills = [f for f in fills if f["id"] not in id_set]
                 if len(dedup_fills) == 0:
                     break
-                dedup_fills = sorted(
-                    dedup_fills, key=lambda fill: fill["id"], reverse=True
-                )
                 for fill in dedup_fills:
                     size = Decimal(str(fill["size"]))
                     if position > 0:
                         if fill["side"] == "buy":
                             temp_position -= size
-                            all_fills.append(fill)
+                            all_fills.insert(0, fill)
                             id_set.add(fill["id"])
                             if temp_position <= 0:
                                 stop_iter = True
                                 break
                         else:
                             temp_position += size
-                            all_fills.append(fill)
+                            all_fills.insert(0, fill)
                             id_set.add(fill["id"])
                     elif position < 0:
                         if fill["side"] == "sell":
                             temp_position += size
-                            all_fills.append(fill)
+                            all_fills.insert(0, fill)
                             id_set.add(fill["id"])
                             if temp_position >= 0:
                                 stop_iter = True
                                 break
                         else:
                             temp_position -= size
-                            all_fills.append(fill)
+                            all_fills.insert(0, fill)
                             id_set.add(fill["id"])
-                end_time = (
-                    min(
-                        [
-                            dateutil.parser.parse(fill["time"]).timestamp()
-                            for fill in all_fills
-                        ]
-                    )
-                    - 0.000001
-                )
-            return sorted(
-                all_fills,
-                key=lambda fill: (dateutil.parser.parse(fill["time"]), fill["id"]),
-            )
+                end_time = ciso8601.parse_datetime(all_fills[0]["time"]).timestamp()
+            return list(reversed(all_fills))
 
     async def get_positions(self):
         client = self._get_rest_client()
