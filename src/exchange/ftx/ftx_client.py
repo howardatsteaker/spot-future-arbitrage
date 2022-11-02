@@ -631,18 +631,13 @@ class FtxExchange(ExchangeBase):
                 dedupted_history = [his for his in history if his["id"] not in id_set]
                 if len(dedupted_history) == 0:
                     break
-                all_history.extend(dedupted_history)
+                all_history = dedupted_history + all_history
                 id_set |= set([his["id"] for his in dedupted_history])
-                end_time = (
-                    min(
-                        [dateutil.parser.parse(his["time"]) for his in dedupted_history]
-                    ).timestamp()
-                    - 0.000001
-                )
+                end_time = ciso8601.parse_datetime(all_history[0]["time"]).timestamp()
             else:
                 error_msg = res_json["error"]
                 ftx_throw_exception(error_msg)
-        return sorted(all_history, key=lambda his: dateutil.parser.parse(his["time"]))
+        return list(reversed(all_history))
 
     async def get_withdraw_history(
         self, start_time: float, end_time: float
@@ -665,18 +660,13 @@ class FtxExchange(ExchangeBase):
                 dedupted_history = [his for his in history if his["id"] not in id_set]
                 if len(dedupted_history) == 0:
                     break
-                all_history.extend(dedupted_history)
+                all_history = dedupted_history + all_history
                 id_set |= set([his["id"] for his in dedupted_history])
-                end_time = (
-                    min(
-                        [dateutil.parser.parse(his["time"]) for his in dedupted_history]
-                    ).timestamp()
-                    - 0.000001
-                )
+                end_time = ciso8601.parse_datetime(all_history[0]["time"]).timestamp()
             else:
                 error_msg = res_json["error"]
                 ftx_throw_exception(error_msg)
-        return sorted(all_history, key=lambda his: dateutil.parser.parse(his["time"]))
+        return list(reversed(all_history))
 
     def _test_cloudflare_bypass(self) -> bool:
         url = "https://api.ftx.com/api/fast_access_health_check"
