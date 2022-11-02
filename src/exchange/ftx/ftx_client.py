@@ -6,8 +6,6 @@ from decimal import Decimal
 from typing import Dict, List
 
 import aiohttp
-import dateutil.parser
-import pytz
 import requests
 from requests import Request
 import ciso8601
@@ -111,9 +109,7 @@ class FtxExchange(ExchangeBase):
 
     def map_kline(self, raw_kline: dict) -> Kline:
         return Kline(
-            start_time=dateutil.parser.parse(raw_kline["startTime"]).replace(
-                tzinfo=pytz.utc
-            ),
+            start_time=ciso8601.parse_datetime(raw_kline["startTime"]),
             open=Decimal(str(raw_kline["open"])),
             high=Decimal(str(raw_kline["high"])),
             low=Decimal(str(raw_kline["low"])),
@@ -152,19 +148,11 @@ class FtxExchange(ExchangeBase):
             dedupted_candles = [c for c in candles if c["startTime"] not in time_set]
             if len(dedupted_candles) == 0:
                 break
-            all_candles.extend(dedupted_candles)
+            all_candles = dedupted_candles + all_candles
             time_set |= {c["startTime"] for c in dedupted_candles}
-            end_time = (
-                min(
-                    [dateutil.parser.parse(c["startTime"]) for c in candles]
-                ).timestamp()
-                - 1
-            )
+            end_time = ciso8601.parse_datetime(all_candles[0]["startTime"]).timestamp()
             if end_time < start_time:
                 break
-        all_candles = sorted(
-            all_candles, key=lambda x: dateutil.parser.parse(x["startTime"])
-        )
 
         return list(map(self.map_kline, all_candles))
 
@@ -190,17 +178,14 @@ class FtxExchange(ExchangeBase):
                 ftx_throw_exception(error_msg)
             if len(fills) == 0:
                 break
-            all_fills.extend([fill for fill in fills if fill["id"] not in id_set])
-            id_set |= set([fill["id"] for fill in fills])
-            end_time = (
-                min([dateutil.parser.parse(fill["time"]).timestamp() for fill in fills])
-                - 0.000001
-            )
+            dedupted_fills = [fill for fill in fills if fill["id"] not in id_set]
+            if len(dedupted_fills) == 0:
+                break
+            all_fills.extend(dedupted_fills)
+            id_set |= set([fill["id"] for fill in dedupted_fills])
+            end_time = ciso8601.parse_datetime(all_fills[-1]["time"]).timestamp()
 
-        return sorted(
-            all_fills,
-            key=lambda fill: (dateutil.parser.parse(fill["time"]), fill["id"]),
-        )
+        return list(reversed(all_fills))
 
     async def get_account(self) -> dict:
         client = self._get_rest_client()
@@ -226,7 +211,7 @@ class FtxExchange(ExchangeBase):
                 ftx_throw_exception(error_msg)
 
     async def get_spot_margin_history(
-        self, start_time: float = None, end_time: float = None
+        self, start_time: float = None, end_time: float = None, coin: str = None
     ) -> List[dict]:
         client = self._get_rest_client()
         url = self.BASE_REST_URL + "/spot_margin/history"
@@ -235,8 +220,9 @@ class FtxExchange(ExchangeBase):
             data["start_time"] = start_time
         if end_time:
             data["end_time"] = end_time
-        headers = self._gen_auth_header("GET", url)
-        async with client.get(url, headers=headers, params=data) as res:
+        if coin:
+            data["coin"] = coin
+        async with client.get(url, params=data) as res:
             json_res = await res.json()
             if json_res["success"]:
                 return json_res["result"]
@@ -249,15 +235,13 @@ class FtxExchange(ExchangeBase):
     ) -> List[dict]:
         results = []
         while True:
-            result = await self.get_spot_margin_history(start_time, end_time)
-            usd_result = [r for r in result if r["coin"] == "USD" and r not in results]
+            result = await self.get_spot_margin_history(start_time, end_time, coin="USD")
+            usd_result = [r for r in result if r not in results]
             if len(usd_result) == 0:
                 break
             results.extend(usd_result)
-            end_time = min(
-                dateutil.parser.parse(r["time"]).timestamp() for r in usd_result
-            )
-        return sorted(results, key=lambda r: dateutil.parser.parse(r["time"]))
+            end_time = ciso8601.parse_datetime(results[-1]["time"]).timestamp()
+        return list(reversed(results))
 
     async def get_coins(self) -> List[dict]:
         client = self._get_rest_client()
@@ -464,7 +448,7 @@ class FtxExchange(ExchangeBase):
                             all_fills.insert(0, fill)
                             id_set.add(fill["id"])
                 end_time = ciso8601.parse_datetime(all_fills[0]["time"]).timestamp()
-            return list(reversed(all_fills))
+            return all_fills
 
     async def get_positions(self):
         client = self._get_rest_client()
@@ -525,7 +509,7 @@ class FtxExchange(ExchangeBase):
             id=ftx_raw_trade["id"],
             price=Decimal(str(ftx_raw_trade["price"])),
             size=Decimal(str(ftx_raw_trade["size"])),
-            timestamp=dateutil.parser.parse(ftx_raw_trade["time"]).timestamp(),
+            timestamp=ciso8601.parse_datetime(ftx_raw_trade["time"]).timestamp(),
             taker_side=Side.BUY if ftx_raw_trade["side"] == "buy" else Side.SELL,
         )
 
@@ -533,7 +517,7 @@ class FtxExchange(ExchangeBase):
         self, symbol: str, start_time: float, end_time: float
     ) -> List[Trade]:
         client = self._get_rest_client()
-        all_trades = []
+        all_trades: List[Trade] = []
         id_set = set()
         while True:
             url = (
@@ -544,18 +528,21 @@ class FtxExchange(ExchangeBase):
             async with client.get(url) as res:
                 json_res = await res.json()
             if json_res["success"]:
-                trades = json_res["result"]
+                trades: List[dict] = json_res["result"]
             else:
                 error_msg = json_res["error"]
                 ftx_throw_exception(error_msg)
             if len(trades) == 0:
                 break
-            trades = list(map(self.map_trade, trades))
-            all_trades.extend([trade for trade in trades if trade["id"] not in id_set])
-            id_set |= set([trade["id"] for trade in trades])
-            end_time = min([trade["timestamp"] for trade in trades]) - 0.000001
+            dedupted_trades: List[dict] = [trade for trade in trades if trade["id"] not in id_set]
+            if len(dedupted_trades) == 0:
+                break
+            mapped_trades: List[Trade] = list(map(self.map_trade, dedupted_trades))
+            all_trades.extend(mapped_trades)
+            id_set |= set([trade["id"] for trade in mapped_trades])
+            end_time = all_trades[-1]["timestamp"]
 
-        return sorted(all_trades, key=lambda trade: trade["id"])
+        return list(reversed(all_trades))
 
     async def request_quote(self, from_coin: str, to_coin: str, size: Decimal) -> str:
         """Request for OTC quote
