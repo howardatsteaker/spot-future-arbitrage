@@ -5,8 +5,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 from typing import Dict, List, Union
+import re
 
-import dateutil.parser
+import ciso8601
 import pandas as pd
 import pytz
 import uvloop
@@ -110,9 +111,16 @@ async def main():
     ftx = FtxExchange(config.api_key, config.api_secret, config.subaccount_name)
 
     # configs
-    st = dateutil.parser.parse("2022-10-01T18:00:01.712767+00:00").timestamp()
-    expiry_dt: datetime = datetime(2022, 12, 30, 16, tzinfo=pytz.utc)  # for 1230
-    # expiry_dt: datetime = datetime(2023, 3, 31, 16, tzinfo=pytz.utc)  # for 0331
+    st = ciso8601.parse_datetime("2022-10-01T18:00:01.712767+00:00").timestamp()
+
+    # get expiry datetime from market infos
+    future_infos = await ftx.get_futures()
+    max_expiry_dt: datetime = datetime.fromtimestamp(0, tz=pytz.utc)
+    regex = re.compile(f"[0-9A-Z]+-{config.season}")
+    for info in future_infos:
+        if regex.match(info["name"]):
+            expiry_dt: datetime = ciso8601.parse_datetime(info["expiry"])
+            max_expiry_dt = max(max_expiry_dt, expiry_dt)
 
     results: Dict[str, HedgeState] = {}
     et: float = time.time()
@@ -161,7 +169,7 @@ async def main():
                 DepositOrWithdraw(
                     type="d",
                     size=Decimal(str(his["size"])),
-                    time=dateutil.parser.parse(his["time"]),
+                    time=ciso8601.parse_datetime(his["time"]),
                 )
             )
     for his in withdraw_his:
@@ -170,7 +178,7 @@ async def main():
                 DepositOrWithdraw(
                     type="w",
                     size=Decimal(str(his["size"])),
-                    time=dateutil.parser.parse(his["time"]),
+                    time=ciso8601.parse_datetime(his["time"]),
                 )
             )
     all_history = sorted(all_history, key=lambda item: item.time)
