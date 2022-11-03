@@ -2,7 +2,6 @@ import asyncio
 from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Dict
-from uuid import UUID
 
 from src.exchange.ftx.ftx_data_type import (FtxFundOpenFilledMessage,
                                             FtxFundRequestMessage,
@@ -14,9 +13,9 @@ from src.exchange.ftx.ftx_data_type import (FtxFundOpenFilledMessage,
 class FundManager:
     leverage_limit: Decimal = None
     free_collateral: Decimal = Decimal(0)
-    free_usd: Decimal = Decimal(0)
-    borrowed_usd: Decimal = Decimal(0)
-    collateral_freeze: Dict[UUID, Decimal] = field(default_factory=lambda: dict())
+    collateral_freeze: Dict[str, Decimal] = field(
+        default_factory=lambda: dict()
+    )  # use coin as the key
     leverage_info: FtxLeverageInfo = FtxLeverageInfo()
     lock: asyncio.Lock = asyncio.Lock()
 
@@ -36,12 +35,7 @@ class FundManager:
             self.free_collateral = max(Decimal(0), self.free_collateral)
             self.leverage_info = leverage_info
 
-    async def update_usd_state(self, free_usd: Decimal, spot_borrow: Decimal):
-        async with self.lock:
-            self.free_usd = free_usd
-            self.borrowed_usd = spot_borrow
-
-    async def request_for_open(
+    async def request_for_budget(
         self, request: FtxFundRequestMessage
     ) -> FtxFundResponseMessage:
         async with self.lock:
@@ -50,38 +44,22 @@ class FundManager:
             else:
                 collateral = self.free_collateral
             if collateral <= 0:
-                return FtxFundResponseMessage(
-                    id=request.id,
-                    approve=False,
-                    fund_supply=Decimal(0),
-                    borrow=Decimal(0),
-                )
+                return FtxFundResponseMessage(coin=request.coin, fund_supply=Decimal(0))
             elif request.fund_needed < collateral:
                 # handle collateral change
                 fund_supply = request.fund_needed
-                self.collateral_freeze[request.id] = fund_supply
+                self.collateral_freeze[request.coin] = fund_supply
                 self.free_collateral -= fund_supply
-                # handle usd change
-                borrow = max(Decimal(0), request.spot_notional_value - self.free_usd)
-                self.borrowed_usd += borrow
-                self.free_usd = max(Decimal(0), self.free_usd - fund_supply)
                 return FtxFundResponseMessage(
-                    id=request.id, approve=True, fund_supply=fund_supply, borrow=borrow
+                    coin=request.coin, fund_supply=fund_supply
                 )
             else:
                 # handle collateral change
                 fund_supply = collateral
-                self.collateral_freeze[request.id] = fund_supply
+                self.collateral_freeze[request.coin] = fund_supply
                 self.free_collateral = Decimal(0)
-                # handle usd change
-                borrow = max(Decimal(0), request.spot_notional_value - self.free_usd)
-                self.borrowed_usd += borrow
-                self.free_usd = max(Decimal(0), self.free_usd - fund_supply)
                 return FtxFundResponseMessage(
-                    id=request.id,
-                    approve=True,
-                    fund_supply=fund_supply,
-                    borrow=fund_supply,
+                    coin=request.coin, fund_supply=fund_supply
                 )
 
     def _get_free_collateral_with_leverage_limit(self):
@@ -93,7 +71,7 @@ class FundManager:
 
     async def handle_open_order_filled(self, msg: FtxFundOpenFilledMessage):
         async with self.lock:
-            freeze_amount = self.collateral_freeze.get(msg.id, Decimal(0))
+            freeze_amount = self.collateral_freeze.get(msg.coin, Decimal(0))
             # handle collateral change in freeze
             self.free_collateral += freeze_amount
             # handle collateral change

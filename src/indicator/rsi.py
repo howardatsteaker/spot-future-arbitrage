@@ -4,6 +4,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import List
 
+import dateutil.parser
 import numpy as np
 import pandas as pd
 
@@ -14,21 +15,23 @@ from src.indicator.base_indicator import BaseIndicator
 
 
 @dataclass
-class BollingerParams:
+class RSIParams:
     length: int
-    std_mult: float
+    upper_limit: float
+    lower_limit: float
 
 
-class Bollinger(BaseIndicator):
-    """To use Bollinger Band indicator, one should set parameters in the yaml config file.
+class RSI(BaseIndicator):
+    """To use RSI indicator, one should set parameters in the yaml config file.
     For example:
 
     indicator:
-        name: 'bollinger'
+        name: 'rsi'
         params:
             resolution: 3600  # Enum of (15, 60, 300, 900, 3600, 14400, 86400) in seconds
-            length: 20
-            std_mult: 2.0
+            length: 14
+            upper_limit: 70
+            lower_limit: 30
     """
 
     def __init__(
@@ -37,49 +40,63 @@ class Bollinger(BaseIndicator):
         kline_resolution: CandleResolution,
         spot_client: ExchangeBase,
         future_client: ExchangeBase,
-        params: BollingerParams = None,
+        params: RSIParams = None,
     ):
         super().__init__(kline_resolution)
-        self.hedge_pair: HedgePair = hedge_pair
+        self.hedge_pair = hedge_pair
         self.spot_client: ExchangeBase = spot_client
         self.future_client: ExchangeBase = future_client
         if not params:
             # default params
-            self.params: BollingerParams = BollingerParams(length=20, std_mult=2.0)
+            self.params: RSIParams = RSIParams(
+                length=14, upper_limit=70, lower_limit=30
+            )
         else:
-            self.params: BollingerParams = params
+            self.params: RSIParams = params
 
     @staticmethod
     def compute_thresholds(
-        merged_candles_df: pd.DataFrame, params: BollingerParams, as_df=False
+        merged_candles_df: pd.DataFrame, params: RSIParams, as_df=False
     ):
-        rolling = merged_candles_df["close"].rolling(params.length)
-        merged_candles_df["ma"] = rolling.mean()
-        merged_candles_df["std"] = rolling.std()
+        close = merged_candles_df["close"]
+        diff = close.diff(1)
+        pos = diff.apply(lambda x: max(0, x))
+        neg = diff.apply(lambda x: -min(0, x))
+        rolling_pos = pos.rolling(params.length).mean()
+        rolling_neg = neg.rolling(params.length).mean()
 
-        upper_threshold_df = (
-            merged_candles_df["ma"] + params.std_mult * merged_candles_df["std"]
+        # calculate thresholds invertly
+        curr_loss_with_ups = rolling_neg * (params.length - 1) / params.length
+        curr_gain_wtih_downs = rolling_pos * (params.length - 1) / params.length
+        upper_threshold = (
+            params.upper_limit
+            * curr_loss_with_ups
+            / (100 - params.upper_limit)
+            * params.length
+            - rolling_pos * (params.length - 1)
+            + close
         )
-        lower_threshold_df = (
-            merged_candles_df["ma"] - params.std_mult * merged_candles_df["std"]
+        lower_threshold = (
+            close
+            - (100 - params.lower_limit)
+            / params.lower_limit
+            * curr_gain_wtih_downs
+            * params.length
+            - rolling_neg * (params.length - 1)
         )
-
         if as_df:
             return (
-                upper_threshold_df,
-                lower_threshold_df,
+                upper_threshold,
+                lower_threshold,
             )
         else:
-            return (
-                upper_threshold_df.iloc[-1],
-                lower_threshold_df.iloc[-1],
-            )
+            return upper_threshold.iloc[-1], lower_threshold.iloc[-1]
 
     # for live trade usage
     async def update_indicator_info(self):
         resolution = self._kline_resolution
-        end_ts: int = int((time.time() // resolution.value - 1) * resolution.value)
-        start_ts: int = int(end_ts - 2 * self.params.length * resolution.value)
+        end_ts = (time.time() // resolution.value - 1) * resolution.value
+        start_ts = end_ts - 2 * self.params.length * resolution.value
 
         spot_candles = await self.spot_client.get_candles(
             self.hedge_pair.spot, resolution, start_ts, end_ts
@@ -98,6 +115,7 @@ class Bollinger(BaseIndicator):
         future_close = future_df["close"].rename("f_close")
         merged_df = pd.concat([spot_close, future_close], axis=1)
         merged_df["close"] = merged_df["f_close"] - merged_df["s_close"]
+        print(merged_df)
 
         upper_threshold, lower_threshold = self.compute_thresholds(
             merged_df, self.params
@@ -107,7 +125,7 @@ class Bollinger(BaseIndicator):
         self._lower_threshold = Decimal(str(lower_threshold))
         self._last_kline_start_timestamp = spot_df.index[-1].timestamp()
 
-    def candles_to_df(self, candles: List[Kline]) -> pd.DataFrame:
+    def candles_to_df(self, candles: List[dict]) -> pd.DataFrame:
         df = pd.DataFrame.from_records(candles)
         df["close"] = df["close"].astype("float32")
         df.set_index("start_time", inplace=True)
@@ -115,7 +133,7 @@ class Bollinger(BaseIndicator):
         return df
 
 
-class BollingerBacktest(Bollinger):
+class RSIBacktest(RSI):
     def __init__(
         self,
         hedge_pair: HedgePair,
@@ -130,15 +148,18 @@ class BollingerBacktest(Bollinger):
             spot_client=spot_client,
             future_client=future_client,
         )
-        self.config: BackTestConfig = backtest_config
+        self.config = backtest_config
 
-    def generate_params(self) -> list[BollingerParams]:
+    def generate_params(self) -> list[RSIParams]:
         params = []
-        for boll_mult in np.arange(0.8, 1.9, 0.1):
-            boll_mult = round(boll_mult, 1)
-            for length in np.arange(10, 50, 5):
-                length = int(length)
-                params.append(BollingerParams(length=length, std_mult=boll_mult))
+        for length in np.arange(7, 28, 7):
+            length = int(length)
+            for lower_limit, upper_limit in zip(range(15, 40, 5), range(75, 60, -5)):
+                params.append(
+                    RSIParams(
+                        length=length, lower_limit=lower_limit, upper_limit=upper_limit
+                    )
+                )
         return params
 
     def get_save_path(self) -> str:
@@ -146,4 +167,4 @@ class BollingerBacktest(Bollinger):
         from_date_str = from_datatime.strftime("%Y%m%d")
         to_datatime = datetime.fromtimestamp(self.config.end_timestamp)
         to_data_str = to_datatime.strftime("%Y%m%d")
-        return f"local/backtest/bollinger_{self.future_client.name}_{self.hedge_pair.future}_{from_date_str}_{to_data_str}"
+        return f"local/backtest/rsi_{self.future_client.name}_{self.hedge_pair.future}_{from_date_str}_{to_data_str}"

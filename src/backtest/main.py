@@ -1,136 +1,89 @@
-import datetime
-import time
-from dataclasses import asdict
-from decimal import Decimal
+from pick import pick
 
-from ..exchange.ftx.ftx_data_type import FtxHedgePair
-from .backtest_bollinger import run_backtest
-from .ftx_data_types import BackTestConfig
-from .ftx_prepare_backtest_data import (save_kline_from_trades,
-                                        save_merged_kline, save_merged_trades)
-from .ftx_trades_downloader import run_trades_data_download_process
+from src.backtest.backtest import run_backtest
+from src.backtest.binance.binance_config import (binance_future_config_options,
+                                                 binance_get_backtest_config)
+from src.backtest.binance.binance_prepare_backtest_data import \
+    run_binance_data_prepare_process
+from src.backtest.ftx.ftx_config import (ftx_future_config_options,
+                                         ftx_get_backtest_config)
+from src.backtest.ftx.ftx_prepare_backtest_data import \
+    run_ftx_data_prepare_process
+from src.exchange.binance.binance_client import (
+    BinanceSpotExchange, BinanceUSDMarginFuturesExchange)
+from src.exchange.binance.binance_data_type import (BinanceCandleResolution,
+                                                    BinanceUSDTQuaterHedgePair)
+from src.exchange.ftx.ftx_client import FtxExchange
+from src.exchange.ftx.ftx_data_type import FtxCandleResolution, FtxHedgePair
+from src.indicator.bollinger import BollingerBacktest
+from src.indicator.donchian import DonchianBacktest
+from src.indicator.keltner import KeltnerBacktest
+from src.indicator.macd import MACDBacktest
+from src.indicator.macd_bollinger import MACDBollingerBacktest
+from src.indicator.rsi import RSIBacktest
 
 
 def main():
-    start_time = "2022/08/01"
-    end_time = "2022/08/22"
-    expiration_time = "2022/09/30"
-    trades_dir = "local/trades/"
-    save_dir = "local/"
-    resolution = "1H"
+    class_title = "Choose Strategy Class:"
+    class_options = [
+        BollingerBacktest,
+        DonchianBacktest,
+        KeltnerBacktest,
+        MACDBollingerBacktest,
+        MACDBacktest,
+        RSIBacktest,
+    ]
 
-    hedge_pair: FtxHedgePair = FtxHedgePair(
-        coin="BTC", spot="BTC/USD", future="BTC-0930"
-    )
+    class_option, _ = pick(class_options, class_title, indicator="=>")
+    backtest_class = class_option
 
-    start_timestamp = int(
-        time.mktime(datetime.datetime.strptime(start_time, "%Y/%m/%d").timetuple())
-    )
-    end_timestamp = int(
-        time.mktime(datetime.datetime.strptime(end_time, "%Y/%m/%d").timetuple())
-    )
-    expiration_timestamp = int(
-        time.mktime(datetime.datetime.strptime(expiration_time, "%Y/%m/%d").timetuple())
-    )
+    exchange_title = "Choose Exchange:"
+    exchange_options = ["Ftx", "Binance"]
 
-    config: BackTestConfig = BackTestConfig(
-        fee_rate=Decimal("0.000228"),
-        collateral_weight=Decimal("0.975"),
-        ts_to_stop_open=expiration_timestamp - 86400,
-        ts_to_expiry=expiration_timestamp,
-        expiration_price=Decimal("21141.1"),
-        leverage=Decimal("3"),
-    )
+    exchange_option, _ = pick(exchange_options, exchange_title, indicator="=>")
+    if exchange_option == "Ftx":
+        spot_client = FtxExchange("", "")
+        future_client = spot_client
+        resolution = FtxCandleResolution.ONE_HOUR
+        future_title = "Choose Backtest Future Options"
+        _, index = pick(
+            [option["name"] for option in ftx_future_config_options],
+            future_title,
+            indicator="=>",
+        )
+        hedge_config = ftx_future_config_options[index]
+        hedge_pair: FtxHedgePair = hedge_config["hedge_pair"]
+        backtest_config = ftx_get_backtest_config(hedge_config)
+        run_ftx_data_prepare_process(
+            hedge_pair, backtest_config.start_timestamp, backtest_config.end_timestamp
+        )
+    elif exchange_option == "Binance":
+        spot_client = BinanceSpotExchange("", "")
+        future_client = BinanceUSDMarginFuturesExchange("", "")
+        resolution = BinanceCandleResolution.ONE_HOUR
+        future_title = "Choose Backtest Future Options"
+        _, index = pick(
+            [option["name"] for option in binance_future_config_options],
+            future_title,
+            indicator="=>",
+        )
+        hedge_config = binance_future_config_options[index]
+        hedge_pair: BinanceUSDTQuaterHedgePair = hedge_config["hedge_pair"]
+        backtest_config = binance_get_backtest_config(hedge_config)
+        run_binance_data_prepare_process(
+            hedge_pair, backtest_config.start_timestamp, backtest_config.end_timestamp
+        )
 
-    print(f"download {hedge_pair.spot} trades in {trades_dir}")
-    run_trades_data_download_process(
-        hedge_pair.spot, start_timestamp, end_timestamp, trades_dir
-    )
-
-    print(f"download {hedge_pair.future} trades in {trades_dir}")
-    run_trades_data_download_process(
-        hedge_pair.future, start_timestamp, end_timestamp, trades_dir
-    )
-
-    spot_data_dir = trades_dir + FtxHedgePair.to_dir_name(hedge_pair.spot)
-    future_data_dir = trades_dir + FtxHedgePair.to_dir_name(hedge_pair.future)
-    print(f"save spot {hedge_pair.spot} kline from trades")
-    save_kline_from_trades(
-        spot_data_dir,
-        hedge_pair.spot,
-        start_timestamp,
-        end_timestamp,
-        resolution=resolution,
-        save_dir=save_dir + "kline",
-    )
-    print(f"save future {hedge_pair.future} kline from trades")
-    save_kline_from_trades(
-        future_data_dir,
-        hedge_pair.future,
-        start_timestamp,
-        end_timestamp,
-        resolution=resolution,
-        save_dir=save_dir + "kline",
-    )
-    print("save merged trades")
-    save_merged_trades(
-        hedge_pair.future,
-        future_data_dir,
-        spot_data_dir,
-        start_timestamp,
-        end_timestamp,
-        save_path=save_dir + "merged_trades",
-    )
-    print("save merged kline")
-    save_merged_kline(
-        hedge_pair.future,
-        future_data_dir,
-        spot_data_dir,
-        start_timestamp,
-        end_timestamp,
-        resolution="1H",
-        save_path=save_dir + "merged_kline",
-    )
-
-    trades_path = (
-        save_dir
-        + "merged_trades/"
-        + FtxHedgePair.to_dir_name(hedge_pair.future)
-        + "/"
-        + str(start_timestamp)
-        + "_"
-        + str(end_timestamp)
-        + ".parquet"
-    )
-    spot_klines_path = (
-        save_dir
-        + "kline/"
-        + FtxHedgePair.to_dir_name(hedge_pair.spot)
-        + "/"
-        + str(start_timestamp)
-        + "_"
-        + str(end_timestamp)
-        + "_"
-        + str(resolution)
-        + ".parquet"
-    )
-    future_klines_path = (
-        save_dir
-        + "kline/"
-        + FtxHedgePair.to_dir_name(hedge_pair.future)
-        + "/"
-        + str(start_timestamp)
-        + "_"
-        + str(end_timestamp)
-        + "_"
-        + str(resolution)
-        + ".parquet"
+    indicator = backtest_class(
+        hedge_pair=hedge_pair,
+        kline_resolution=resolution,
+        spot_client=spot_client,
+        future_client=future_client,
+        backtest_config=backtest_config,
     )
 
     print("running backtest...")
-    run_backtest(
-        trades_path, spot_klines_path, future_klines_path, config=asdict(config)
-    )
+    run_backtest(indicator)
 
 
 if __name__ == "__main__":

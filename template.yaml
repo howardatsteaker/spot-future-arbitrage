@@ -5,7 +5,9 @@ exchange:
   subaccount_name: ''
 
 interest_rate:
+  ignore: False  # if True, interest_rate will be set to zero
   lookback_days: 60
+  estimated_borrowing_days: 20
 
 season: '0930'
 
@@ -40,6 +42,10 @@ strategy:
   seconds_before_expiry_to_stop_close_position: 3900  # when the time is close enough to the expiry, close position is not allowed.
   release_mode: False  # if True, one can only close position. Openning new position is not allowed.
   open_fee_coverage_multiplier: 2.5  # to open new position, the basis should cover at least 2 times of the trading fee.
+  max_open_budget: 500  # the maximum amount to open new positoin per iteration
+  cooldown_open_budget: 20  # open budget during cooldown period
+  min_leverage_to_use_cooldown_budget: 2.0  # if current leverage is above this value, cooldown_open_budget with be used.
+  min_volume_usd_24h: 50  # if the daily trading volume of a hedge pair is below this value, the hedge pair will be added to blacklist.
 
 # the 'whitelist' key can be deleted, default includes all markets 
 whitelist:
@@ -49,3 +55,23 @@ whitelist:
 # the 'blacklist' key can be deleted or empty
 blacklist:
   - AMC
+
+slack:
+  enable: True
+  auth_token: ''
+  summary_channel: 'spot_futures_arbitrage'
+  alert_channel: 'sf-arb-alert'
+
+rate_limit:
+  interval: 0.2
+  limit: 7
+
+funding_service:
+  enable: True
+  target_leverage: 2.7
+  leverage_upper_bound: 2.85
+  leverage_lower_bound: 2.5
+  min_deposit_amount: 5000
+  min_withdraw_amount: 5000
+  min_remain: 2000
+  daily_max_net_deposit: 500000
